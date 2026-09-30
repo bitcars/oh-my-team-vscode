@@ -26,6 +26,7 @@ import {
   broadcastEvent,
   dashboardWebSocketHandlers,
 } from "./dashboard-server";
+import type { DashboardEvent, ReplyKind } from "./dashboard-server";
 import path from "node:path";
 
 // ── Configuration ──────────────────────────────────────────────────────────
@@ -50,6 +51,12 @@ interface SessionEntry {
   threadId: string;
   threadDisplayName: string;
   startedAt: string;
+  /** Optional per-session model id (e.g. "claude-opus-5-5"). The router never
+   *  sets or changes it (no route accepts it); an entry that has it in
+   *  hub-registry.json at router start is served as-is by GET /sessions
+   *  (clients show it as a label), kept on re-registration, and written back
+   *  unchanged whenever the registry is saved. */
+  model?: string;
 }
 
 interface Registry {
@@ -194,6 +201,106 @@ function formatStatus(status: SessionStatus): string {
   return lines.join("\n");
 }
 
+// ── Reply log (offline catch-up for non-platform clients) ──────────────────
+//
+// Per-session in-memory log of agent messages mirrored to /ws/events, each
+// tagged with a per-session `seq` that starts at 1 and only increases. Lets
+// the VS Code panel fetch what it missed while disconnected via
+// GET /history?session=&since=<seq> and dedupe by seq. Capped; the oldest
+// entry is dropped first. Deliberately NOT persisted: it resets on router
+// restart and clients are expected to recover from that. Also deliberately
+// kept when a session is removed, so a name that is removed and re-added
+// keeps counting up instead of reusing seqs the panel has already seen.
+
+export const REPLY_LOG_CAP = 200;
+
+type ReplyLogEntry = Extract<DashboardEvent, { type: "session.reply" }>;
+
+const replyLog = new Map<string, ReplyLogEntry[]>();
+
+/** Disambiguates POST /admin/inject message ids sent within the same ms. */
+let injectCounter = 0;
+
+/** Record an agent message into the reply log and broadcast it with its seq. */
+function recordAndBroadcastReply(
+  name: string,
+  text: string,
+  kind: ReplyKind,
+  files: string[],
+): void {
+  const log = replyLog.get(name) ?? [];
+  const seq = (log.length > 0 ? log[log.length - 1].seq : 0) + 1;
+  const entry: ReplyLogEntry = {
+    type: "session.reply",
+    name,
+    text,
+    kind,
+    files,
+    ts: new Date().toISOString(),
+    seq,
+  };
+  log.push(entry);
+  if (log.length > REPLY_LOG_CAP) {
+    log.shift();
+  }
+  replyLog.set(name, log);
+  broadcastEvent(entry);
+}
+
+// ── Origin guard for write routes and live streams ─────────────────────────
+
+/**
+ * True when a request carries an Origin header that is not localhost or
+ * 127.0.0.1. Browsers always send Origin on cross-origin POSTs and on every
+ * WebSocket handshake, so this stops a web page from driving the router's
+ * write routes (the router parses JSON bodies regardless of content-type,
+ * so a "simple" text/plain POST would otherwise get through without a CORS
+ * preflight) and from reading /ws/* (browsers apply no CORS to WebSockets).
+ * A missing Origin is allowed: non-browser clients (bridges' Bun fetch,
+ * hooks' curl, the VS Code extension host's Node fetch and `ws` client)
+ * don't send one. An unparseable Origin, including the literal "null" of
+ * sandboxed or file:// pages, counts as foreign.
+ *
+ * Differs on purpose from dashboard-server.ts `isLocalOrigin`, which guards
+ * the dashboard's own browser-only POSTs and so also rejects a missing Origin.
+ */
+function hasForeignOrigin(req: Request): boolean {
+  const origin = req.headers.get("origin");
+  if (origin === null) return false;
+  try {
+    const { hostname } = new URL(origin);
+    return hostname !== "localhost" && hostname !== "127.0.0.1";
+  } catch {
+    return true;
+  }
+}
+
+/** Requests refused when they carry a foreign Origin (see hasForeignOrigin):
+ *  every /ws/* stream and every method other than GET/HEAD. Guarding by
+ *  default means a new write route is covered without anyone remembering to
+ *  list it. The dashboard's /api/sessions/* POSTs pass through this and then
+ *  still apply their own stricter isLocalOrigin check. */
+function isOriginGuarded(method: string, pathname: string): boolean {
+  if (pathname.startsWith("/ws/")) return true;
+  return method !== "GET" && method !== "HEAD";
+}
+
+/** Parse a JSON object body. Returns null for invalid JSON or a non-object. */
+async function readJsonObject(
+  req: Request
+): Promise<Record<string, unknown> | null> {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return null;
+  }
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    return null;
+  }
+  return body as Record<string, unknown>;
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 
 let registry = loadRegistry();
@@ -272,7 +379,13 @@ adapter.onMessage((message: InboundMessage) => {
 
 // ── Handle permission responses from adapter ───────────────────────────────
 
-adapter.onPermissionResponse((requestId: string, allow: boolean) => {
+// Forward a permission answer to the bridges and tell non-platform clients
+// the prompt is settled. Shared by the platform callback below and the
+// POST /permission-answer route (VS Code panel). The bridge forwards every
+// answer it receives to Claude Code without deduping; Claude Code is
+// expected to ignore an answer for an unknown or already-settled request_id
+// (not verified here), which is what makes a second answer harmless.
+function answerPermission(requestId: string, allow: boolean): void {
   // We need to find which session this permission belongs to.
   // For now, broadcast to all sessions — only the one with the matching
   // request_id will accept it, others will ignore.
@@ -285,6 +398,12 @@ adapter.onPermissionResponse((requestId: string, allow: boolean) => {
       // Session might be down — ignore
     });
   }
+  // Dismiss the prompt on every non-platform client (VS Code panel).
+  broadcastEvent({ type: "session.permission.resolved", requestId });
+}
+
+adapter.onPermissionResponse((requestId: string, allow: boolean) => {
+  answerPermission(requestId, allow);
 });
 
 // ── Debounced status flush ─────────────────────────────────────────────────
@@ -323,6 +442,10 @@ Bun.serve({
     const url = new URL(req.url);
     const method = req.method;
 
+    if (isOriginGuarded(method, url.pathname) && hasForeignOrigin(req)) {
+      return Response.json({ error: "origin not allowed" }, { status: 403 });
+    }
+
     // Dashboard routes may return "upgrade" to hand off to WebSocket.
     // Doing this at the top of fetch() keeps all WS routing in one place.
     if (url.pathname.startsWith("/ws/")) {
@@ -359,6 +482,28 @@ Bun.serve({
         platform: config.platform,
         sessions: Object.keys(registry.sessions).length,
       });
+    }
+
+    // ── Slash-command menu ───────────────────────────────────────────
+    // The active adapter's command menu, so non-platform clients (the VS Code
+    // panel) can offer the same commands. Empty when the adapter has none.
+
+    if (method === "GET" && url.pathname === "/commands") {
+      return Response.json({ commands: adapter.botCommands ?? [] });
+    }
+
+    // ── Reply log: offline catch-up for non-platform clients ─────────
+    // GET /history?session=<name>&since=<seq> → { events with seq > since,
+    // latest seq (0 when empty) }. A missing or non-numeric `since` is 0.
+
+    if (method === "GET" && url.pathname === "/history") {
+      const sessionName = url.searchParams.get("session") ?? "";
+      const since =
+        Number.parseInt(url.searchParams.get("since") ?? "0", 10) || 0;
+      const log = replyLog.get(sessionName) ?? [];
+      const events = log.filter((e) => e.seq > since);
+      const latest = log.length > 0 ? log[log.length - 1].seq : 0;
+      return Response.json({ events, latest });
     }
 
     // ── List all sessions ────────────────────────────────────────────
@@ -534,18 +679,43 @@ Bun.serve({
 
     if (method === "POST" && url.pathname === "/reply") {
       const body = await req.json();
-      const { sessionName, text } = body as {
+      const { sessionName, text, files } = body as {
         sessionName: string;
-        text: string;
+        text: unknown;
+        files?: unknown;
       };
 
-      const session = registry.sessions[sessionName];
+      // Bridges always send a non-empty string; anything else is refused
+      // before it can reach the mirror or the platform.
+      if (typeof text !== "string" || text.length === 0) {
+        return Response.json(
+          { error: "text (non-empty string) required" },
+          { status: 400 }
+        );
+      }
+
+      const session = Object.hasOwn(registry.sessions, sessionName)
+        ? registry.sessions[sessionName]
+        : undefined;
       if (!session) {
         return Response.json(
           { error: `session "${sessionName}" not found` },
           { status: 404 }
         );
       }
+
+      // Mirror the reply to non-platform clients (VS Code panel) over
+      // /ws/events and record it for GET /history. Kept HERE, before the
+      // status-finalize and adapter.send span below, so a platform failure
+      // can't suppress the mirror. broadcastEvent returns early with no
+      // subscribers and swallows per-socket errors, so this can't affect
+      // platform delivery. Trade-off: if the platform send then fails, the
+      // bridge reports an error and a retried reply is mirrored again under a
+      // new seq (the panel shows it twice).
+      const fileList = Array.isArray(files)
+        ? files.filter((f): f is string => typeof f === "string" && f.length > 0)
+        : [];
+      recordAndBroadcastReply(sessionName, text, "reply", fileList);
 
       // Finalize status message (keep it visible, don't delete)
       const status = sessionStatus.get(sessionName);
@@ -669,13 +839,28 @@ Bun.serve({
           inputPreview: string;
         };
 
-      const session = registry.sessions[sessionName];
+      const session = Object.hasOwn(registry.sessions, sessionName)
+        ? registry.sessions[sessionName]
+        : undefined;
       if (!session) {
         return Response.json(
           { error: `session "${sessionName}" not found` },
           { status: 404 }
         );
       }
+
+      // Mirror the prompt to non-platform clients (VS Code panel) so they can
+      // render Allow/Deny and answer via POST /permission-answer. Sent before
+      // the platform prompt so a platform failure can't hide it.
+      broadcastEvent({
+        type: "session.permission",
+        name: sessionName,
+        requestId,
+        toolName,
+        description,
+        inputPreview,
+        ts: new Date().toISOString(),
+      });
 
       try {
         await adapter.sendPermissionPrompt(session.threadId, {
@@ -692,6 +877,81 @@ Bun.serve({
           { status: 500 }
         );
       }
+    }
+
+    // ── Permission answer from a non-platform client (VS Code panel) ─
+
+    if (method === "POST" && url.pathname === "/permission-answer") {
+      const body = await readJsonObject(req);
+      const requestId = body?.requestId;
+      const allow = body?.allow;
+      if (typeof requestId !== "string" || !requestId || typeof allow !== "boolean") {
+        return Response.json(
+          { error: "requestId and allow (boolean) required" },
+          { status: 400 }
+        );
+      }
+      answerPermission(requestId, allow);
+      return Response.json({ status: "answered" });
+    }
+
+    // ── Inject a message into a session's bridge ─────────────────────
+    // The VS Code panel's send path ({ session, content, sender:"vscode" }).
+    // Delivered straight to the bridge's /message, like a platform message;
+    // there is no retry queue, so a bridge failure is returned as 502 for the
+    // client to surface instead of being dropped silently.
+
+    if (method === "POST" && url.pathname === "/admin/inject") {
+      const body = await readJsonObject(req);
+      const injectSession = typeof body?.session === "string" ? body.session : "";
+      const injectContent = typeof body?.content === "string" ? body.content : "";
+      const injectSender =
+        typeof body?.sender === "string" && body.sender ? body.sender : "omt-heartbeat";
+      if (!injectSession || !injectContent) {
+        return Response.json(
+          { error: "session and content required" },
+          { status: 400 }
+        );
+      }
+      if (!Object.hasOwn(registry.sessions, injectSession)) {
+        return Response.json(
+          { error: `session "${injectSession}" not found` },
+          { status: 404 }
+        );
+      }
+      const session = registry.sessions[injectSession];
+      const now = Date.now();
+      try {
+        const res = await fetch(`http://localhost:${session.bridgePort}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: injectContent,
+            sender: injectSender,
+            senderId: "",
+            messageId: `inject-${now}-${++injectCounter}`,
+            timestamp: new Date(now).toISOString(),
+          }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          return Response.json(
+            { error: `bridge responded ${res.status}: ${detail}` },
+            { status: 502 }
+          );
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return Response.json(
+          { error: `bridge unreachable: ${message}` },
+          { status: 502 }
+        );
+      }
+      process.stderr.write(
+        `omt-router: injected message from "${injectSender}" → ${injectSession}\n`
+      );
+      return Response.json({ status: "queued" });
     }
 
     // ── Dashboard (UI + REST API) ────────────────────────────────────

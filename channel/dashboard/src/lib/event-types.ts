@@ -8,6 +8,9 @@ export type DashboardEvent =
   | { type: "session.removed"; name: string }
   | { type: "session.status"; name: string; current: string | null; done: string[]; elapsedMs: number }
   | { type: "session.status.cleared"; name: string }
+  | { type: "session.reply"; name: string; text: string; kind: "reply" | "escalate" | "team"; files?: string[]; ts: string; seq: number }
+  | { type: "session.permission"; name: string; requestId: string; toolName: string; description: string; inputPreview: string; ts: string }
+  | { type: "session.permission.resolved"; requestId: string }
   | { type: "router.log"; line: string }
   | { type: "system.heartbeat"; ts: number };
 

@@ -89,6 +89,14 @@ export interface ChannelAdapter {
   readonly name: string
 
   /**
+   * The platform's slash-command menu (e.g. Telegram setMyCommands), if the
+   * adapter registers one. Served by the router's GET /commands so clients
+   * that aren't the platform (the VS Code panel) can offer the same commands.
+   * Optional: absent means the router serves an empty list.
+   */
+  readonly botCommands?: ReadonlyArray<{ command: string; description: string }>
+
+  /**
    * Connect to the platform. Called once at router startup.
    * Should validate credentials and establish the connection.
    * Throws if credentials are invalid or connection fails.

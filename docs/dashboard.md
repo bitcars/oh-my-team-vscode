@@ -87,15 +87,27 @@ for it.
 { "type": "session.removed", "name": "my-app" }
 { "type": "session.status", "name": "my-app", "current": "Running npm test", "done": ["Read package.json"], "elapsedMs": 12000 }
 { "type": "session.status.cleared", "name": "my-app" }
+{ "type": "session.reply", "name": "my-app", "text": "...", "kind": "reply", "files": [], "ts": "2026-04-16T...", "seq": 7 }
+{ "type": "session.permission", "name": "my-app", "requestId": "abcde", "toolName": "Bash", "description": "...", "inputPreview": "...", "ts": "2026-04-16T..." }
+{ "type": "session.permission.resolved", "requestId": "abcde" }
 ```
+
+`seq` counts up per session from 1 and resets when the router restarts.
+`GET /history?session=<name>&since=<seq>` returns the replies after
+`since` (last 200 per session), for catching up after a disconnect.
 
 Client reconnects with exponential backoff (500ms → 10s cap) so a
 `omt hub stop` → `start` cycle recovers without a page refresh.
 
 ## Access
 
-Localhost only (bind to `127.0.0.1`). No auth. For remote access, use
-an SSH tunnel:
+Localhost only (bind to `127.0.0.1`). No auth. Every `/ws/*` connection
+and every request other than GET/HEAD is refused with 403 when it carries
+an `Origin` that isn't `localhost` or `127.0.0.1`; requests with no
+`Origin` (curl, bridges, hooks) are allowed. So open the dashboard as
+`http://localhost:<port>`: through a LAN IP, `0.0.0.0` or a reverse proxy
+hostname, the live stream and terminals won't connect. For remote access,
+use an SSH tunnel:
 
 ```bash
 ssh -L 8800:localhost:8800 user@host
