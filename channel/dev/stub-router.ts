@@ -29,6 +29,21 @@
  *   /perm        → raises a permission prompt; answering it (panel Allow/Deny
  *                  or POST /permission-answer) replies "permission <id>: allow|deny"
  *   /fail        → the bridge answers 500, so /admin/inject returns 502
+ *   /ask         → this session asks a 3-option question (text card in the
+ *                  topic + session.ask card in the panel); the answer comes
+ *                  back as "ask answered: <choice>"
+ *   /topic TEXT  → feeds TEXT into the router as if typed in this session's
+ *                  Telegram topic: a number or option text answers the open
+ *                  ask, anything else dismisses it and is delivered as usual.
+ *                  Text typed in the PANEL never answers an ask; use /topic.
+ *   /team        → after 5 s, this session sends the OTHER session a
+ *                  team_message (kind "team": shown there, NO toast)
+ *   /ping-other  → after 5 s, a plain reply on the OTHER session (presence
+ *                  control: it MUST toast)
+ *   /escalate    → after 5 s, a plain reply on the OTHER session, then it
+ *                  escalates within 1 s (both toast; the escalation despite
+ *                  the panel's 2 s cooldown)
+ * Switch the panel to this session (away from the other one) during the 5 s.
  */
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -67,6 +82,7 @@ process.on("exit", () => rmSync(hubDir, { recursive: true, force: true }));
 // ── Stub platform adapter ──────────────────────────────────────────────────
 
 let stubConnected = false;
+let messageCallback: ((message: Record<string, unknown>) => void) | null = null;
 
 function stubLog(line: string): void {
   process.stderr.write(`[stub-telegram] ${line}\n`);
@@ -94,7 +110,9 @@ class StubTelegramAdapter {
   async sendPermissionPrompt(threadId: string, prompt: { requestId: string; toolName: string }) {
     stubLog(`permission prompt ${threadId}: ${prompt.toolName} (${prompt.requestId})`);
   }
-  onMessage() {}
+  onMessage(cb: (message: Record<string, unknown>) => void) {
+    messageCallback = cb;
+  }
   // No platform to answer from; answers come via POST /permission-answer.
   onPermissionResponse() {}
   getHubThreadId() {
@@ -131,8 +149,14 @@ function sendReply(sessionName: string, text: string): void {
   );
 }
 
+/** The other stub session, for /team. */
+function otherSession(sessionName: string): string {
+  return SESSIONS.map((s) => s.name).find((n) => n !== sessionName) ?? sessionName;
+}
+
 function startEchoBridge(sessionName: string): number {
   let permCounter = 0;
+  const threadId = `stub-thread-${sessionName}`;
   const server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -148,7 +172,56 @@ function startEchoBridge(sessionName: string): number {
         if (content === "/fail") {
           return Response.json({ error: "stub bridge failure (requested)" }, { status: 500 });
         }
-        if (content === "/perm") {
+        const topic = /^\/topic\s+([\s\S]+)$/.exec(content);
+        const other = otherSession(sessionName);
+        if (sender === "decision") {
+          // The router delivered an <ask-answer>; report what came back.
+          const answer = content.replace(/^<ask-answer[^>]*>\n?/, "").replace(/\n?<\/ask-answer>$/, "");
+          setTimeout(() => sendReply(sessionName, `ask answered: ${answer}`), 300);
+        } else if (sender.startsWith("team:")) {
+          // A team_message arrived; it is already mirrored as kind "team".
+          stubLog(`team message delivered to ${sessionName} from ${sender.slice(5)}`);
+        } else if (content === "/ask") {
+          setTimeout(() => {
+            postRouter("/ask", {
+              sessionName,
+              question: "Stub decision: which option?",
+              options: ["Option A", "Option B", "Option C"],
+            }).catch(() => {});
+          }, 300);
+        } else if (topic) {
+          setTimeout(() => {
+            messageCallback?.({
+              threadId,
+              text: topic[1],
+              senderId: "stub-user",
+              senderName: "Stub Telegram user",
+              messageId: `stub-typed-${Date.now()}`,
+              timestamp: new Date().toISOString(),
+            });
+          }, 300);
+        } else if (content === "/team") {
+          setTimeout(() => {
+            postRouter("/team-message", {
+              from: sessionName,
+              to: other,
+              text: `Stub team message from ${sessionName}`,
+            }).catch(() => {});
+          }, 5000);
+        } else if (content === "/ping-other") {
+          setTimeout(() => sendReply(other, `Stub plain reply on ${other} (should toast)`), 5000);
+        } else if (content === "/escalate") {
+          setTimeout(() => {
+            sendReply(other, `Stub plain reply on ${other} before the escalation`);
+            setTimeout(() => {
+              postRouter("/escalate", {
+                from: other,
+                reason: "Stub escalation",
+                question: "Stub: approve the stub action?",
+              }).catch(() => {});
+            }, 500);
+          }, 5000);
+        } else if (content === "/perm") {
           const requestId = `stub-${sessionName}-${++permCounter}`;
           setTimeout(() => {
             postRouter("/permission-request", {
@@ -233,6 +306,7 @@ process.stderr.write(
     `  VS Code setting:  "omt.routerUrl": "http://localhost:${ROUTER_PORT}"`,
     `  sessions:         ${SESSIONS.map((s) => s.name).join(", ")}`,
     "  panel commands:   any text → echo · /burst N · /perm · /fail",
+    "                    /ask · /topic TEXT · /team · /ping-other · /escalate",
     "  acceptance:",
     `    curl -s ${ROUTER_URL}/sessions | jq 'to_entries[] | .value | {name, threadDisplayName, model}'`,
     `    curl -s -XPOST ${ROUTER_URL}/admin/inject -H 'content-type: application/json' -d '{"session":"stub-echo","content":"ping","sender":"vscode"}'`,
