@@ -11,9 +11,16 @@
 TMPFILE=$(mktemp)
 cat > "$TMPFILE"
 
-# Extract cwd and source .omt-env
+# OMT_NO_STATUS=1: this session posts no status (interactive profile mode).
+[ "$OMT_NO_STATUS" = "1" ] && { rm -f "$TMPFILE"; exit 0; }
+
+# Hooks inherit the session's environment, and bin/omt sets ROUTER_URL and
+# SESSION_NAME on every launch. The cwd's .omt-env is only a fallback, so a
+# file left in a project dir by another hub can't redirect this session.
+# A profile session (OMT_HOME set) never uses it: that file is the default
+# hub's.
 CWD=$(grep -o '"cwd":"[^"]*"' "$TMPFILE" | head -1 | cut -d'"' -f4)
-[ -n "$CWD" ] && [ -f "$CWD/.omt-env" ] && source "$CWD/.omt-env"
+[ -z "$ROUTER_URL" ] && [ -z "$OMT_HOME" ] && [ -n "$CWD" ] && [ -f "$CWD/.omt-env" ] && source "$CWD/.omt-env"
 [ -z "$ROUTER_URL" ] && { rm -f "$TMPFILE"; exit 0; }
 [ -z "$SESSION_NAME" ] && { rm -f "$TMPFILE"; exit 0; }
 

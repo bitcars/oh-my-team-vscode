@@ -28,6 +28,8 @@ import {
 } from "./dashboard-server";
 import type { DashboardEvent, ReplyKind } from "./dashboard-server";
 import path from "node:path";
+import { realpathSync, statSync } from "node:fs";
+import { userInfo } from "node:os";
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
@@ -373,6 +375,98 @@ async function readJsonObject(
 let registry = loadRegistry();
 const pendingRegistrations = new Set<string>();
 const config = loadConfig();
+
+// ── Profile startup guard (bin/omt --profile, WO-021) ─────────────────────
+// Only when bin/omt starts this router for a profile (OMT_PROFILE=1). Runs
+// before the adapter loads or the port binds: a second router on the default
+// hub's dir, port band or bot would double-poll that bot and cross-wire both
+// hubs. Without OMT_PROFILE the router behaves exactly as before.
+
+function profileFleetDir(): string {
+  const sandbox = process.env.OMT_TEST_SANDBOX;
+  const seam = process.env.OMT_FLEET_DIR;
+  if (sandbox && seam) {
+    const root = realOrResolved(sandbox);
+    const inTemp = /^\/(private\/)?tmp\/.|^\/private\/var\/folders\/./.test(root);
+    const p = realOrResolved(seam);
+    if (inTemp && ownedPrivateDir(root) && (p === root || p.startsWith(root + "/"))) return p;
+  }
+  return path.join(userInfo().homedir, ".oh-my-team");
+}
+
+/** Same rule as bin/omt's seam gate: a dir we own that only we can write. */
+function ownedPrivateDir(p: string): boolean {
+  try {
+    const st = statSync(p);
+    return st.isDirectory() && st.uid === process.getuid?.() && (st.mode & 0o022) === 0;
+  } catch {
+    return false;
+  }
+}
+
+function realOrResolved(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+function credential(c: Record<string, unknown> | undefined, key: string): string {
+  const v = c?.[key];
+  if (typeof v === "number") return String(v);
+  return typeof v === "string" ? v.trim() : "";
+}
+
+/** Why this profile router must not start, or null. Never includes a credential. */
+function profileStartupRefusal(cfg: HubConfig, hubDir: string, port: number): string | null {
+  const fleetDir = realOrResolved(profileFleetDir());
+  const dir = realOrResolved(hubDir);
+  if (dir === fleetDir || dir.startsWith(fleetDir + "/")) {
+    return "the hub dir is the default hub's dir or inside it";
+  }
+  if (fleetDir.startsWith(dir + "/")) return "the hub dir contains the default hub's dir";
+  if (dir === realOrResolved(userInfo().homedir)) return "the hub dir is the home dir";
+  if (port >= 8800 && port <= 8899) return `port ${port} is in the default hub's band 8800-8899`;
+  // No default hub config: nothing to compare. One that exists but can't be
+  // read: refuse, since this hub might be using its bot.
+  let fleet: Record<string, unknown> = {};
+  const fleetConfig = path.join(fleetDir, "hub-config.json");
+  if (existsSync(fleetConfig)) {
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(fleetConfig, "utf-8"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+      const creds = (parsed as Record<string, unknown>).credentials;
+      if (creds && (typeof creds !== "object" || Array.isArray(creds))) throw new Error("credentials is not an object");
+      fleet = (creds ?? {}) as Record<string, unknown>;
+    } catch {
+      return "the default hub's hub-config.json can't be read, so its credentials can't be compared";
+    }
+  }
+  const mine = cfg.credentials as Record<string, unknown>;
+  for (const k of ["botToken", "appToken"]) {
+    const a = credential(mine, k);
+    if (a && a === credential(fleet, k)) return `this hub uses the default hub's ${k}`;
+  }
+  const botId = (t: string) => (t.includes(":") ? t.slice(0, t.indexOf(":")) : "");
+  const a = botId(credential(mine, "botToken"));
+  if (a && a === botId(credential(fleet, "botToken"))) return "this hub uses the default hub's bot (same bot id)";
+  const fleetChats = new Set([credential(fleet, "chatId"), credential(fleet, "channelId")].filter(Boolean));
+  for (const k of ["chatId", "channelId"]) {
+    const c = credential(mine, k);
+    if (c && fleetChats.has(c)) return `this hub uses the default hub's group/channel (${k})`;
+  }
+  return null;
+}
+
+if (process.env.OMT_PROFILE === "1") {
+  const refusal = profileStartupRefusal(config, OMT_HUB_DIR, ROUTER_PORT);
+  if (refusal) {
+    process.stderr.write(`omt-router: refusing to start: ${refusal}\n`);
+    process.exit(2);
+  }
+}
+
 const adapter = await loadAdapter(config.platform);
 
 // ── Connect adapter ────────────────────────────────────────────────────────

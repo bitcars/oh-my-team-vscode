@@ -331,7 +331,7 @@ omt hub init     # choose platform, paste tokens, done
 omt hub start    # starts router + hub session
 ```
 
-Detailed guides: [Telegram Setup](docs/hub-telegram.md) | [Slack Setup](docs/hub-slack.md)
+Detailed guides: [Telegram Setup](docs/hub-telegram.md) | [Slack Setup](docs/hub-slack.md) | [A second hub beside the first (`--profile`)](docs/omtv.md)
 
 ### Usage from Telegram
 
