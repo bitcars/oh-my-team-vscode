@@ -41,6 +41,8 @@ export type DashboardEvent =
   | { type: "session.reply"; name: string; text: string; kind: ReplyKind; files?: string[]; ts: string; seq: number }
   | { type: "session.permission"; name: string; requestId: string; toolName: string; description: string; inputPreview: string; ts: string }
   | { type: "session.permission.resolved"; requestId: string }
+  | { type: "session.ask"; name: string; token: string; question: string; options: string[]; ts: string }
+  | { type: "session.ask.resolved"; name: string; token: string; choice: string }
   | { type: "router.log"; line: string };
 
 export type DashboardWsData =

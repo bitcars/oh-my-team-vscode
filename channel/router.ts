@@ -221,6 +221,73 @@ const replyLog = new Map<string, ReplyLogEntry[]>();
 /** Disambiguates POST /admin/inject message ids sent within the same ms. */
 let injectCounter = 0;
 
+/** Disambiguates POST /team-message message ids sent within the same ms. */
+let teamMessageCounter = 0;
+
+// ── ask(): pending decisions ───────────────────────────────────────────────
+//
+// A session asks the user to pick one of 2–4 options (POST /ask). The router
+// posts the question to the session's topic as a text card with numbered
+// options, keeps the decision here under an 8-hex token and mirrors it to
+// non-platform clients as `session.ask`. It resolves once: an option number
+// or label typed in the session's topic (adapter.onMessage), or POST
+// /ask-answer from the panel. Text sent from the panel (/admin/inject) never
+// answers an ask. Resolving delivers an <ask-answer> to the owning session's
+// bridge. A decision can also be retired unanswered: superseded by a newer
+// ask from the same session, dismissed by an unrelated typed reply, or
+// expired after ASK_STALE_EXPIRE_MS. Every close broadcasts
+// `session.ask.resolved` synchronously, before any await, so that on
+// supersede the old card's clear reaches clients before the new card (the
+// panel clears prompts by session name). In memory only; lost on restart.
+
+export const ASK_STALE_EXPIRE_MS = 6 * 60 * 60 * 1000;
+
+interface PendingDecision {
+  token: string;
+  sessionName: string;
+  threadId: string;
+  question: string;
+  options: string[];
+  createdAt: number;
+}
+
+const pendingDecisions = new Map<string, PendingDecision>();
+
+/** The option a typed reply picks: an exact label (case-insensitive) or a
+ *  bare 1-based number. null when the text picks nothing. */
+function matchDecisionOption(text: string, options: string[]): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  for (const o of options) {
+    if (o.trim().toLowerCase() === t.toLowerCase()) return o;
+  }
+  if (/^[1-9][0-9]?$/.test(t)) {
+    const i = Number.parseInt(t, 10) - 1;
+    if (i < options.length) return options[i];
+  }
+  return null;
+}
+
+function formatAskCard(question: string, options: string[]): string {
+  return [
+    `❓ ${question}`,
+    "",
+    ...options.map((o, i) => `${i + 1}. ${o}`),
+    "",
+    "Reply with the number (or the option text) to answer.",
+  ].join("\n");
+}
+
+function newDecisionToken(): string {
+  let token: string;
+  do {
+    token = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } while (pendingDecisions.has(token));
+  return token;
+}
+
 /** Record an agent message into the reply log and broadcast it with its seq. */
 function recordAndBroadcastReply(
   name: string,
@@ -333,6 +400,35 @@ adapter.onMessage((message: InboundMessage) => {
     return;
   }
 
+  // An open ask() in this session: a typed option number or label answers
+  // it (the <ask-answer> is the delivery, so the raw text is not forwarded);
+  // anything else dismisses it and is delivered as a normal message. A
+  // message carrying attachments is never taken as an answer, so a photo
+  // captioned "2" still reaches the session.
+  const openDecision = Array.from(pendingDecisions.values()).find(
+    (pd) => pd.sessionName === session.name
+  );
+  if (openDecision) {
+    const hasAttachments = (message.attachments?.length ?? 0) > 0;
+    const matched = hasAttachments
+      ? null
+      : matchDecisionOption(message.text, openDecision.options);
+    if (matched !== null) {
+      process.stderr.write(
+        `omt-router: ask ${openDecision.token} in ${session.name} answered by typed text → "${matched}"\n`
+      );
+      resolveDecision(openDecision, matched, "typed", {
+        name: message.senderName || message.senderId,
+        id: message.senderId,
+      }).catch(() => {});
+      return;
+    }
+    process.stderr.write(
+      `omt-router: ask ${openDecision.token} in ${session.name} dismissed by typed text\n`
+    );
+    retireDecision(openDecision, "dismissed").catch(() => {});
+  }
+
   // Start typing indicator + status message
   const status = getOrCreateStatus(session.name);
 
@@ -405,6 +501,111 @@ function answerPermission(requestId: string, allow: boolean): void {
 adapter.onPermissionResponse((requestId: string, allow: boolean) => {
   answerPermission(requestId, allow);
 });
+
+// ── ask(): resolve / retire ────────────────────────────────────────────────
+
+/** Post a line to a session's topic. Best-effort: failures are logged. */
+async function postToTopic(threadId: string, text: string): Promise<void> {
+  try {
+    await adapter.send(threadId, text);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`omt-router: topic post failed: ${message}\n`);
+  }
+}
+
+/** Close a decision with an answer. Synchronously deletes it and broadcasts
+ *  session.ask.resolved; then delivers an <ask-answer> to the session's live
+ *  bridge and posts the outcome to its topic. A failed delivery leaves the
+ *  decision closed (never delivered twice) and is reported, not swallowed. */
+async function resolveDecision(
+  pd: PendingDecision,
+  answer: string,
+  via: "typed" | "panel",
+  answeredBy: { name: string; id: string } = { name: "panel", id: "" }
+): Promise<{ ok: boolean; error?: string }> {
+  pendingDecisions.delete(pd.token);
+  broadcastEvent({
+    type: "session.ask.resolved",
+    name: pd.sessionName,
+    token: pd.token,
+    choice: answer,
+  });
+
+  let error: string | undefined;
+  if (!Object.hasOwn(registry.sessions, pd.sessionName)) {
+    error = "session gone";
+  } else {
+    const session = registry.sessions[pd.sessionName];
+    const attr = (v: string) => v.replace(/"/g, "'").replace(/[\r\n]+/g, " ");
+    const safeQuestion = attr(pd.question);
+    const safeAnsweredBy = attr(answeredBy.name);
+    try {
+      const res = await fetch(`http://localhost:${session.bridgePort}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: `<ask-answer question="${safeQuestion}" answered_by="${safeAnsweredBy}">\n${answer}\n</ask-answer>`,
+          sender: "decision",
+          senderId: answeredBy.id,
+          messageId: `ask-${pd.token}`,
+          timestamp: new Date().toISOString(),
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) error = `bridge responded ${res.status}`;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  if (error === undefined) {
+    await postToTopic(
+      pd.threadId,
+      `✅ ${pd.question} → ${answer}${via === "typed" ? " (answered in chat)" : ""}`
+    );
+    return { ok: true };
+  }
+  process.stderr.write(
+    `omt-router: ask-answer delivery to ${pd.sessionName} failed: ${error}\n`
+  );
+  await postToTopic(
+    pd.threadId,
+    `⚠️ Your answer "${answer}" to "${pd.question}" was not delivered to the session: ${error}`
+  );
+  return { ok: false, error };
+}
+
+/** Close a decision WITHOUT an answer (nothing is delivered to the session). */
+async function retireDecision(
+  pd: PendingDecision,
+  reason: "superseded" | "dismissed" | "expired"
+): Promise<void> {
+  pendingDecisions.delete(pd.token);
+  broadcastEvent({
+    type: "session.ask.resolved",
+    name: pd.sessionName,
+    token: pd.token,
+    choice: `(${reason})`,
+  });
+  // No breadcrumb for "superseded": the new card follows immediately.
+  if (reason === "dismissed") {
+    await postToTopic(pd.threadId, `↩︎ ${pd.question}: dismissed, you replied in chat instead`);
+  } else if (reason === "expired") {
+    await postToTopic(pd.threadId, `⌛ ${pd.question}: expired, no longer awaiting an answer`);
+  }
+}
+
+/** Retire every decision open for ASK_STALE_EXPIRE_MS or longer. */
+export function sweepStaleDecisions(now: number = Date.now()): void {
+  for (const pd of Array.from(pendingDecisions.values())) {
+    if (now - pd.createdAt >= ASK_STALE_EXPIRE_MS) {
+      retireDecision(pd, "expired").catch(() => {});
+    }
+  }
+}
+
+setInterval(() => sweepStaleDecisions(), 60_000).unref();
 
 // ── Debounced status flush ─────────────────────────────────────────────────
 //
@@ -665,6 +866,12 @@ Bun.serve({
       // Remove any attachments stored for this thread. Best-effort — never throws.
       await removeAttachmentDir(session.threadId);
 
+      // Close the session's open asks so a later session with the same name
+      // can't answer them from a new topic.
+      for (const pd of Array.from(pendingDecisions.values())) {
+        if (pd.sessionName === name) retireDecision(pd, "expired").catch(() => {});
+      }
+
       delete registry.sessions[name];
       saveRegistry(registry);
 
@@ -913,6 +1120,14 @@ Bun.serve({
           { status: 400 }
         );
       }
+      // The bridge trusts an <ask-answer> only from sender "decision", and
+      // team text arrives as "team:<name>". Only the router sets these.
+      if (injectSender === "decision" || injectSender.startsWith("team:")) {
+        return Response.json(
+          { error: `sender "${injectSender}" is reserved for the router` },
+          { status: 400 }
+        );
+      }
       if (!Object.hasOwn(registry.sessions, injectSession)) {
         return Response.json(
           { error: `session "${injectSession}" not found` },
@@ -952,6 +1167,271 @@ Bun.serve({
         `omt-router: injected message from "${injectSender}" → ${injectSession}\n`
       );
       return Response.json({ status: "queued" });
+    }
+
+    // ── ask(): a session asks the user to pick an option ─────────────
+    // { sessionName, question, options[2..4] } → { status:"asked", token }.
+    // The text card is posted to the topic first (fork parity); if that
+    // fails nothing is registered or superseded (502), and the agent can
+    // fall back to reply/escalate.
+
+    if (method === "POST" && url.pathname === "/ask") {
+      const body = await readJsonObject(req);
+      const sessionName = typeof body?.sessionName === "string" ? body.sessionName : "";
+      const question = typeof body?.question === "string" ? body.question : "";
+      const options = body?.options;
+      if (
+        !question.trim() ||
+        !Array.isArray(options) ||
+        options.length < 2 ||
+        options.length > 4 ||
+        !options.every((o) => typeof o === "string" && o.trim().length > 0)
+      ) {
+        return Response.json(
+          { error: "ask requires a question and 2–4 non-empty options" },
+          { status: 400 }
+        );
+      }
+      if (!Object.hasOwn(registry.sessions, sessionName)) {
+        return Response.json(
+          { error: `session "${sessionName}" not found` },
+          { status: 404 }
+        );
+      }
+      const session = registry.sessions[sessionName];
+      const askOptions = options as string[];
+      const token = newDecisionToken();
+
+      try {
+        await adapter.send(session.threadId, formatAskCard(question, askOptions));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return Response.json({ error: `send failed: ${message}` }, { status: 502 });
+      }
+
+      // The session may have been removed while the card was being sent.
+      // Registering the decision now would leave an orphan that a later
+      // session with the same name could answer, so drop it.
+      if (
+        !Object.hasOwn(registry.sessions, sessionName) ||
+        registry.sessions[sessionName].threadId !== session.threadId
+      ) {
+        return Response.json(
+          { error: `session "${sessionName}" was removed while the ask was sent` },
+          { status: 410 }
+        );
+      }
+
+      // One open decision per session: a newer ask supersedes the older one.
+      for (const prior of Array.from(pendingDecisions.values())) {
+        if (prior.sessionName === sessionName) {
+          retireDecision(prior, "superseded").catch(() => {});
+        }
+      }
+
+      const createdAt = Date.now();
+      pendingDecisions.set(token, {
+        token,
+        sessionName,
+        threadId: session.threadId,
+        question,
+        options: askOptions,
+        createdAt,
+      });
+      broadcastEvent({
+        type: "session.ask",
+        name: sessionName,
+        token,
+        question,
+        options: askOptions,
+        ts: new Date(createdAt).toISOString(),
+      });
+      return Response.json({ status: "asked", token });
+    }
+
+    // ── ask(): answer from a non-platform client (VS Code panel) ─────
+    // { token, idx } → { status:"answered", choice }. 410 when the decision
+    // is unknown or already closed (answered elsewhere first). Stricter than
+    // the fork: idx must be an integer index into the options (else 400).
+
+    if (method === "POST" && url.pathname === "/ask-answer") {
+      const body = await readJsonObject(req);
+      const token = typeof body?.token === "string" ? body.token : "";
+      if (!token) {
+        return Response.json({ error: "token required" }, { status: 400 });
+      }
+      const pd = pendingDecisions.get(token);
+      if (!pd) {
+        return Response.json(
+          { error: "decision not found or already closed" },
+          { status: 410 }
+        );
+      }
+      const idx = body?.idx;
+      if (
+        typeof idx !== "number" ||
+        !Number.isInteger(idx) ||
+        idx < 0 ||
+        idx >= pd.options.length
+      ) {
+        return Response.json(
+          { error: `idx must be an integer from 0 to ${pd.options.length - 1}` },
+          { status: 400 }
+        );
+      }
+      const choice = pd.options[idx];
+      const result = await resolveDecision(pd, choice, "panel");
+      if (!result.ok) {
+        return Response.json(
+          { error: `answer not delivered: ${result.error}` },
+          { status: 502 }
+        );
+      }
+      return Response.json({ status: "answered", choice });
+    }
+
+    // ── team_message: one session's agent → another's ─────────────────
+    // { from, to, text } → delivered to the target bridge as <team-message>.
+
+    if (method === "POST" && url.pathname === "/team-message") {
+      const body = await readJsonObject(req);
+      const from = typeof body?.from === "string" ? body.from : "";
+      const to = typeof body?.to === "string" ? body.to : "";
+      const text = typeof body?.text === "string" ? body.text : "";
+      if (!text.trim()) {
+        return Response.json(
+          { error: "team_message requires non-empty text" },
+          { status: 400 }
+        );
+      }
+      if (!Object.hasOwn(registry.sessions, to)) {
+        return Response.json(
+          {
+            error: `target session "${to}" not found`,
+            available_sessions: Object.keys(registry.sessions)
+              .filter((n) => n !== from)
+              .sort(),
+          },
+          { status: 404 }
+        );
+      }
+      if (!Object.hasOwn(registry.sessions, from)) {
+        return Response.json(
+          { error: `source session "${from}" not found` },
+          { status: 400 }
+        );
+      }
+      if (from === to) {
+        return Response.json(
+          { error: "from and to are the same session" },
+          { status: 400 }
+        );
+      }
+      const fromSession = registry.sessions[from];
+      const toSession = registry.sessions[to];
+
+      // Team text is another agent's words. Neutralize only the tag
+      // sequences that could forge our framing (a fake </team-message> or
+      // <ask-answer>); other markup such as code passes through verbatim.
+      const framedText = text.replace(/<(\/?)(team-message|ask-answer)/gi, "‹$1$2");
+      const inbound = [
+        `<team-message from="${from}">`,
+        framedText,
+        `</team-message>`,
+        ``,
+        `(This is from another omt project session. To reply, call team_message({ to: "${from}", text: "..." }) — do NOT use the reply tool, it would only post to your own topic.)`,
+      ].join("\n");
+      try {
+        const res = await fetch(`http://localhost:${toSession.bridgePort}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: inbound,
+            sender: `team:${from}`,
+            senderId: "",
+            messageId: `team-${Date.now()}-${++teamMessageCounter}`,
+            timestamp: new Date().toISOString(),
+          }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          return Response.json(
+            { error: `target bridge responded ${res.status}: ${detail}` },
+            { status: 502 }
+          );
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return Response.json(
+          { error: `forward to ${to} failed: ${message}` },
+          { status: 502 }
+        );
+      }
+
+      // Confirmed delivery only: mirror into the RECIPIENT's panel and reply
+      // log. kind "team" is load-bearing: clients key notification rules on
+      // it, so team traffic must never be mirrored as "reply".
+      recordAndBroadcastReply(to, `[team ← ${from}] ${text}`, "team", []);
+
+      const preview = text.length > 280 ? `${text.slice(0, 280)}…` : text;
+      void postToTopic(fromSession.threadId, `📤 *→ ${to}*\n${preview}`);
+      void postToTopic(toSession.threadId, `📥 *from ${from}*\n${preview}`);
+      process.stderr.write(`omt-router: team_message ${from} → ${to} (${text.length} chars)\n`);
+      return Response.json({ status: "delivered" });
+    }
+
+    // ── escalate: a session needs the user's decision ─────────────────
+    // { from, reason, question } → posted to the session's own topic.
+    // No push/@mention here: the clone has no operator user id to mention
+    // (deferred: needs credentials.escalationUserId).
+
+    if (method === "POST" && url.pathname === "/escalate") {
+      const body = await readJsonObject(req);
+      const from = typeof body?.from === "string" ? body.from : "";
+      const reason = typeof body?.reason === "string" ? body.reason : "";
+      const question = typeof body?.question === "string" ? body.question : "";
+      if (!Object.hasOwn(registry.sessions, from)) {
+        return Response.json(
+          { error: `source session "${from}" not found` },
+          { status: 404 }
+        );
+      }
+      if (!reason.trim() || !question.trim()) {
+        return Response.json(
+          { error: "escalate requires non-empty reason and question" },
+          { status: 400 }
+        );
+      }
+      // Mirror first (after validation, before the awaited platform send) so
+      // a platform failure can't hide it. kind "escalate" marks it important.
+      recordAndBroadcastReply(from, `🆘 Escalation — ${reason}\n\n${question}`, "escalate", []);
+
+      const session = registry.sessions[from];
+      try {
+        await adapter.send(
+          session.threadId,
+          [
+            `🆘 *Escalation — your decision needed*`,
+            ``,
+            `*Why:* ${reason}`,
+            ``,
+            question,
+            ``,
+            `_Reply in this topic to answer._`,
+          ].join("\n")
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return Response.json(
+          {
+            error: `escalation is shown in the VS Code panel but was not posted to the platform: ${message}`,
+          },
+          { status: 502 }
+        );
+      }
+      process.stderr.write(`omt-router: escalate from ${from}\n`);
+      return Response.json({ status: "escalated", pushed: false });
     }
 
     // ── Dashboard (UI + REST API) ────────────────────────────────────
