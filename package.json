@@ -39,6 +39,7 @@
     "skills/",
     "hooks/",
     "channel/bridge.ts",
+    "channel/bridge-tools.ts",
     "channel/bridge.mcp.json",
     "channel/router.ts",
     "channel/dashboard-server.ts",

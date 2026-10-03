@@ -77,6 +77,10 @@ for it.
 | `POST /api/sessions/:name/restart` | Stop + restart with `--continue` |
 | `WS /ws/events` | Live events (see below) |
 | `WS /ws/tmux/:name` | PTY bridge for interactive terminal |
+| `POST /ask` | A session asks the user to pick one of 2–4 options |
+| `POST /ask-answer` | Answer an open ask from a non-platform client (`{token, idx}`; 410 if already closed) |
+| `POST /team-message` | One session's agent messages another's |
+| `POST /escalate` | A session posts a blocker to its own topic |
 
 ### Event stream
 
@@ -90,6 +94,8 @@ for it.
 { "type": "session.reply", "name": "my-app", "text": "...", "kind": "reply", "files": [], "ts": "2026-04-16T...", "seq": 7 }
 { "type": "session.permission", "name": "my-app", "requestId": "abcde", "toolName": "Bash", "description": "...", "inputPreview": "...", "ts": "2026-04-16T..." }
 { "type": "session.permission.resolved", "requestId": "abcde" }
+{ "type": "session.ask", "name": "my-app", "token": "1a2b3c4d", "question": "...", "options": ["...", "..."], "ts": "2026-04-16T..." }
+{ "type": "session.ask.resolved", "name": "my-app", "token": "1a2b3c4d", "choice": "..." }
 ```
 
 `seq` counts up per session from 1 and resets when the router restarts.
@@ -98,6 +104,37 @@ for it.
 
 Client reconnects with exponential backoff (500ms → 10s cap) so a
 `omt hub stop` → `start` cycle recovers without a page refresh.
+
+An ask is posted to the session's topic as a numbered text card. It closes
+once: a typed option number or option text in the topic, or `POST
+/ask-answer`. Text sent from the panel never answers it, and `POST
+/admin/inject` refuses the senders `decision` and `team:*`, which only the
+router sets. An ask is also closed unanswered when a newer ask replaces it,
+when other text is typed in the topic, or after 6 hours; `session.ask.resolved` then carries `choice`
+`"(superseded)"`, `"(dismissed)"` or `"(expired)"`. Asks are kept in memory
+and lost when the router restarts. Team messages are mirrored as
+`session.reply` with `kind: "team"` and escalations with `kind: "escalate"`.
+
+Known limitations of asks, team messages and escalations:
+
+- `session.ask.resolved` clears whatever prompt the VS Code panel holds for
+  that session, so a dismissed or expired ask can clear a later permission
+  card ([bitcars/omt-vscode-ext#1](https://github.com/bitcars/omt-vscode-ext/issues/1)).
+- `/ask` posts to the platform first: if that fails the ask is not shown in
+  the panel either, and the agent gets an error (fork parity).
+- Tests check that delivery, `session.ask.resolved` and the topic follow-up
+  all happen, not their order (except that the clear goes out first).
+- There are no Telegram buttons; answer by typing the number or option
+  text ([bitcars/oh-my-team-vscode#3](https://github.com/bitcars/oh-my-team-vscode/issues/3)).
+- Escalations don't @mention the operator; that needs a configured
+  operator id (`credentials.escalationUserId`), not implemented yet.
+- Two asks sent at the same moment by one session may register out of
+  order if the first platform post is slower.
+- A typed reply matches option text before option numbers, so with options
+  that are themselves numbers, "1" picks the option labelled 1 (fork parity).
+- Team text is neutralized only for exact `<team-message` / `<ask-answer`
+  tags; lookalikes such as `< /team-message>` pass through. The bridge
+  trusts the channel sender, not the tags, so this is not an injection path.
 
 ## Access
 
