@@ -193,7 +193,8 @@ async function restartSession(ctx: DashboardContext, name: string): Promise<Resp
   // Small grace period so the router sees the port release cleanly before
   // the new bridge comes up.
   await new Promise((r) => setTimeout(r, 500));
-  Bun.spawn(["omt", "hub", "add", session.path, "--continue"], {
+  // A profile router (bin/omt --profile) carries OMT_CLI, its own CLI.
+  Bun.spawn([process.env.OMT_CLI || "omt", "hub", "add", session.path, "--continue"], {
     stdout: "ignore",
     stderr: "ignore",
     stdin: "ignore",
