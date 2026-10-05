@@ -61,11 +61,12 @@ const T7MD = "T7 agents/hub.md never tells the hub to run a bare `omt hub`";
 const T8 = "T8 start, add, stop, restore, stop write nothing outside the profile";
 const T9 = "T9 an untrusted project is refused before any session starts; a trusted one starts";
 const T10 = "T10 the session env wins over a cwd .omt-env; the file is the fallback";
-const T11 = "T11 the plugin view has no .mcp.json and replaces stale content instead of nesting";
+const T11 = "T11 the plugin view copies hooks/ and .claude-plugin/, links the rest, has no .mcp.json, and replaces stale content";
 const T12 = "T12 interactive mode posts no status even with a fleet .omt-env in cwd, and uses the plugin view";
 const T13 = "T13 a bridge port held by another process is skipped, never registered";
 const T14 = "T14 seams without the OMT_TEST_SANDBOX gate, or with a gate outside temp, are ignored";
 const T17 = "T17 a hub start whose bridge never comes up doesn't mark the hub initialized";
+const T18 = "T18 hub add and interactive mode warn when the view's hooks or manifest differ from the checkout's, or hooks/ is still a link";
 // added after the review gate
 const T2REL = "T2 a relative OMT_HOME is made absolute against the cwd";
 const T2SHIM = "T2 the profile's omt shim acts on its own profile when run from a plain shell";
@@ -283,6 +284,55 @@ const MUTANTS: Mutant[] = [
     file: P, suite: PROFILE,
     patches: [["    for e in agents hooks skills .claude-plugin settings.json CLAUDE.md channel bin; do", "    for e in agents hooks skills .claude-plugin settings.json CLAUDE.md channel bin .mcp.json; do"]],
     mustFail: [T11], mustPass: [T6],
+  },
+  // ── WO-022: hooks/ and .claude-plugin/ are copies; the staleness warning ──
+  {
+    name: "view-links-hooks: hooks/ is a link again",
+    file: P, suite: PROFILE,
+    patches: [["            hooks|.claude-plugin) cp -R", "            .claude-plugin) cp -R"]],
+    mustFail: [T11], mustPass: [T6],
+  },
+  {
+    name: "view-links-claude-plugin: .claude-plugin/ is a link again",
+    file: P, suite: PROFILE,
+    patches: [["            hooks|.claude-plugin) cp -R", "            hooks) cp -R"]],
+    mustFail: [T11], mustPass: [T6],
+  },
+  {
+    name: "view-keeps-stale: the view is not emptied before a rebuild",
+    file: P, suite: PROFILE,
+    patches: [['    rm -rf "$PLUGIN_ARG"\n    mkdir -p "$PLUGIN_ARG"\n', '    mkdir -p "$PLUGIN_ARG"\n']],
+    mustFail: [T11], mustPass: [T6],
+  },
+  {
+    name: "no-stale-warning: a drifted view is not reported",
+    file: P, suite: PROFILE,
+    patches: [["        echo -e \"${YELLOW}The plugin view's hooks differ from the checkout's.", "        : echo -e \"${YELLOW}The plugin view's hooks differ from the checkout's."]],
+    mustFail: [T18], mustPass: [T11],
+  },
+  {
+    name: "stale-warning-ignores-link: a view that still links hooks/ is not reported",
+    file: P, suite: PROFILE,
+    patches: [['    if [ -L "$PLUGIN_ARG/hooks" ] \\\n        || ! diff -rq', '    if ! diff -rq']],
+    mustFail: [T18], mustPass: [T11],
+  },
+  {
+    name: "add-skips-stale-check: hub add never checks the view",
+    file: P, suite: PROFILE,
+    patches: [["    if [ -d \"$PLUGIN_ARG\" ] && [ -x \"$OMT_CLI\" ]; then\n        warn_stale_view\n", "    if [ -d \"$PLUGIN_ARG\" ] && [ -x \"$OMT_CLI\" ]; then\n        :\n"]],
+    mustFail: [T18], mustPass: [T11],
+  },
+  {
+    name: "stale-warning-ignores-plugin-json: a drifted manifest is not reported",
+    file: P, suite: PROFILE,
+    patches: [[" \\\n        || ! cmp -s \"$PLUGIN_DIR/.claude-plugin/plugin.json\" \"$PLUGIN_ARG/.claude-plugin/plugin.json\"; then", "; then"]],
+    mustFail: [T18], mustPass: [T11],
+  },
+  {
+    name: "ensure-skips-stale-check: interactive mode never checks the view",
+    file: P, suite: PROFILE,
+    patches: [["        build_plugin_view || return 3\n    else\n        warn_stale_view\n", "        build_plugin_view || return 3\n    else\n        :\n"]],
+    mustFail: [T18], mustPass: [T11],
   },
   // ── T12: interactive ──
   {

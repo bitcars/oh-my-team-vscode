@@ -3,7 +3,7 @@
  *
  * Boots the REAL router.ts in-process. The only substitution is the Telegram
  * adapter, swapped for a no-network fake via mock.module; router.ts exports
- * REPLY_LOG_CAP, ASK_STALE_EXPIRE_MS and sweepStaleDecisions for tests. OMT_HUB_DIR is a fresh temp dir and the router
+ * REPLY_LOG_CAP, ASK_STALE_EXPIRE_MS, sweepStaleDecisions and hasCtx for tests. OMT_HUB_DIR is a fresh temp dir and the router
  * listens on a free port (never 8800). A fake bridge records what the router
  * forwards to it, and a real WebSocket client listens on /ws/events.
  *
@@ -17,7 +17,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -171,10 +171,12 @@ try {
 } finally {
   globalThis.setInterval = realSetInterval;
 }
-const { REPLY_LOG_CAP, ASK_STALE_EXPIRE_MS, sweepStaleDecisions } = routerModule as {
+const { REPLY_LOG_CAP, ASK_STALE_EXPIRE_MS, sweepStaleDecisions, hasCtx, parseCtx } = routerModule as {
   REPLY_LOG_CAP: number;
   ASK_STALE_EXPIRE_MS: number;
   sweepStaleDecisions: (now?: number) => void;
+  hasCtx: (name: string) => boolean;
+  parseCtx: (body: Json, now?: number) => Json | string;
 };
 
 // ── /ws/events listener ────────────────────────────────────────────────────
@@ -237,6 +239,27 @@ async function register(name: string, bridgePort = BRIDGE_PORT) {
 
 function reply(sessionName: string, text: string, files?: unknown) {
   return post("/reply", files === undefined ? { sessionName, text } : { sessionName, text, files });
+}
+
+let ctxAt = 1_791_152_000_000;
+/** A valid POST /ctx body with a fresh, increasing `at`, so rows on one
+ *  session never trip the router's ordering rule by accident. */
+function ctxBody(overrides: Json = {}): Json {
+  ctxAt += 1000;
+  return {
+    session: "plain",
+    sid: "s1",
+    at: ctxAt,
+    model: "claude-opus-5-5",
+    ctx: { tokens: 36404, window: 1_000_000 },
+    quota: { fiveHour: { pct: 7, resetsAt: "2026-10-05T00:20:00.000Z" }, sevenDay: null },
+    agents: { running: 1, alive: 2 },
+    ...overrides,
+  };
+}
+
+async function sessionsNow(): Promise<Record<string, Json>> {
+  return (await (await fetch(`${BASE}/sessions`)).json()) as Record<string, Json>;
 }
 
 async function history(session: string, since?: string) {
@@ -529,6 +552,7 @@ const GUARDED_ROUTES: { method: "POST" | "DELETE"; path: (t: string) => string; 
   { method: "POST", path: () => "/ask-answer", body: (t) => ({ token: t, idx: 0 }) },
   { method: "POST", path: () => "/team-message", body: (t) => ({ from: "origin-team-from", to: "origin-team-to", text: t }) },
   { method: "POST", path: () => "/escalate", body: (t) => ({ from: "origin-esc", reason: t, question: t }) },
+  { method: "POST", path: () => "/ctx", body: (t) => ctxBody({ session: "plain", model: t }) },
   { method: "DELETE", path: (t) => `/sessions/${t}` },
 ];
 
@@ -1319,5 +1343,230 @@ describe("existing events (verify only)", () => {
     const res = await fetch(`${BASE}/sessions/short-lived`, { method: "DELETE" });
     expect(res.status).toBe(200);
     await waitForEvent(mark, (x) => x.type === "session.removed" && x.name === "short-lived");
+  });
+});
+
+// ── G: POST /ctx, the ctx mod's reports (fork #16, WO-022) ─────────────────
+
+/** Status of a POST /ctx on 'plain' with `overrides` merged into a valid body. */
+async function ctxStatus(overrides: Json): Promise<number> {
+  return (await post("/ctx", ctxBody(overrides))).status;
+}
+
+/** Every key anywhere in a parsed JSON value. */
+function allKeys(v: unknown, out: string[] = []): string[] {
+  if (v !== null && typeof v === "object") {
+    for (const [k, x] of Object.entries(v)) {
+      out.push(k);
+      allKeys(x, out);
+    }
+  }
+  return out;
+}
+
+describe("G ctx", () => {
+  test("G1 POST /ctx stores the report; GET /sessions serves it with the router's pct", async () => {
+    const body = ctxBody();
+    const res = await post("/ctx", body);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, applied: true });
+    const ctx = (await sessionsNow()).plain.ctx as Json;
+    expect(typeof ctx.ts).toBe("number");
+    expect({ ...ctx, ts: 0 } as Json).toEqual({
+      ts: 0,
+      at: body.at,
+      sid: "s1",
+      model: "claude-opus-5-5",
+      tokens: 36404,
+      window: 1_000_000,
+      pct: 4,
+      quota: { fiveHour: { pct: 7, resetsAt: "2026-10-05T00:20:00.000Z" }, sevenDay: null },
+      agents: { running: 1, alive: 2 },
+    });
+  });
+
+  test("G2 pct rounds like Claude Code; null tokens give null pct", async () => {
+    const pctFor = async (tokens: number | null) => {
+      expect(await ctxStatus({ ctx: { tokens, window: 1_000_000 } })).toBe(200);
+      return ((await sessionsNow()).plain.ctx as Json).pct;
+    };
+    expect([await pctFor(33890), await pctFor(36404), await pctFor(0), await pctFor(null)]).toEqual([3, 4, 0, null]);
+  });
+
+  test("G3 a stored report is broadcast as session.ctx", async () => {
+    const mark = events.length;
+    const body = ctxBody();
+    expect((await post("/ctx", body)).status).toBe(200);
+    const e = await waitForEvent(mark, (x) => x.type === "session.ctx" && x.name === "plain");
+    expect(e.ctx).toMatchObject({ at: body.at, tokens: 36404, pct: 4, sid: "s1" });
+  });
+
+  test("G4 unknown and prototype-key session names are 404 and store nothing", async () => {
+    const before = await sessionsNow();
+    for (const session of ["nosuch", "constructor", "__proto__", "toString"]) {
+      expect([session, (await post("/ctx", ctxBody({ session }))).status]).toEqual([session, 404]);
+    }
+    expect(await sessionsNow()).toEqual(before);
+    expect([hasCtx("constructor"), hasCtx("__proto__"), hasCtx("toString")]).toEqual([false, false, false]);
+  });
+
+  test("G4b GET /sessions/<prototype key> is 404", async () => {
+    for (const name of ["constructor", "__proto__", "toString"]) {
+      expect([name, (await fetch(`${BASE}/sessions/${name}`)).status]).toEqual([name, 404]);
+    }
+    expect((await fetch(`${BASE}/sessions/plain`)).status).toBe(200);
+  });
+
+  test("G5 window bounds", async () => {
+    const r: number[] = [];
+    for (const window of [0, 1, 10_000_000, 10_000_001]) r.push(await ctxStatus({ ctx: { tokens: 0, window } }));
+    expect(r).toEqual([400, 200, 200, 400]);
+  });
+
+  test("G5 tokens bounds", async () => {
+    const r: number[] = [];
+    for (const tokens of [-1, 0, 10_000_000, 10_000_001, 1.5]) r.push(await ctxStatus({ ctx: { tokens, window: 10_000_000 } }));
+    expect(r).toEqual([400, 200, 200, 400, 400]);
+  });
+
+  test("G5 quota pct bounds", async () => {
+    const r: number[] = [];
+    for (const pct of [0, 1000, 1000.1, -0.1]) r.push(await ctxStatus({ quota: { fiveHour: { pct, resetsAt: null }, sevenDay: null } }));
+    expect(r).toEqual([200, 200, 400, 400]);
+  });
+
+  test("G5 resetsAt bounds", async () => {
+    // 40 and 41 chars, both ISO with a zone and both parseable: only the length differs
+    const at40 = "2026-10-05T00:20:00." + "0".repeat(19) + "Z";
+    const at41 = "2026-10-05T00:20:00." + "0".repeat(20) + "Z";
+    expect([at40.length, at41.length, Number.isNaN(Date.parse(at40)), Number.isNaN(Date.parse(at41))]).toEqual([40, 41, false, false]);
+    const r: number[] = [];
+    for (const resetsAt of [
+      "2026-10-05T00:20:00.000Z", // what Claude Code sends
+      at40,
+      at41,
+      "x".repeat(40),
+      "<b>x</b> 2026", // Date.parse accepts it; not ISO
+      "2026-13-45T00:00:00Z", // ISO-shaped, not a date
+      null,
+    ]) {
+      r.push(await ctxStatus({ quota: { fiveHour: null, sevenDay: { pct: 1, resetsAt } } }));
+    }
+    expect(r).toEqual([200, 200, 400, 400, 400, 400, 200]);
+  });
+
+  test("G5 agents bounds", async () => {
+    const r: number[] = [];
+    for (const agents of [
+      { running: 2, alive: 2 },
+      { running: 1000, alive: 1000 },
+      { running: 3, alive: 2 },
+      { running: 0, alive: 1001 },
+      { running: -1, alive: 0 },
+    ]) {
+      r.push(await ctxStatus({ agents }));
+    }
+    expect(r).toEqual([200, 200, 400, 400, 400]);
+  });
+
+  test("G5 model bounds", async () => {
+    const r: number[] = [];
+    for (const model of [
+      "m".repeat(100),
+      "m".repeat(101),
+      "x y",
+      "claude-opus-5-5[1m]",
+      "claude-opus-4@20250514",
+      "anthropic/claude-opus-5-5",
+      "us.anthropic.claude-opus-5-5:0",
+      "<b>",
+      null,
+    ]) {
+      r.push(await ctxStatus({ model }));
+    }
+    expect(r).toEqual([200, 400, 400, 200, 200, 200, 200, 400, 200]);
+  });
+
+  test("G5 sid bounds", async () => {
+    const r: number[] = [];
+    for (const sid of ["a".repeat(64), "a".repeat(65), "a b", null]) r.push(await ctxStatus({ sid }));
+    expect(r).toEqual([200, 400, 400, 200]);
+  });
+
+  test("G5 at bounds", async () => {
+    await register("ctxbound");
+    const r: number[] = [];
+    for (const at of [999_999_999_999, 1_000_000_000_000, 1.5e12]) {
+      r.push((await post("/ctx", { ...ctxBody({ session: "ctxbound" }), at })).status);
+    }
+    expect(r).toEqual([400, 200, 200]);
+  });
+
+  test("G5 at more than 60 s ahead of the router clock is 400 (+59 s, +60 s pass; +61 s refused)", async () => {
+    await register("ctxfuture");
+    const now = Date.now();
+    const r: number[] = [];
+    for (const ahead of [59_000, 60_000, 61_000]) {
+      r.push((await post("/ctx", { ...ctxBody({ session: "ctxfuture" }), at: now + ahead })).status);
+    }
+    expect(r).toEqual([200, 200, 400]);
+  });
+
+  test("G5 parseCtx: at exactly 60 000 ms ahead is accepted, 60 001 ms is refused", () => {
+    const now = 1_791_200_000_000;
+    const body = (ahead: number) => ({ at: now + ahead, ctx: { tokens: 1, window: 1000 } });
+    expect([59_999, 60_000, 60_001].map((a) => typeof parseCtx(body(a), now))).toEqual(["object", "object", "string"]);
+  });
+
+  test("G7 DELETE drops the session's report", async () => {
+    await register("ctxdel");
+    expect((await post("/ctx", ctxBody({ session: "ctxdel" }))).status).toBe(200);
+    expect(hasCtx("ctxdel")).toBe(true);
+    expect((await fetch(`${BASE}/sessions/ctxdel`, { method: "DELETE" })).status).toBe(200);
+    expect(hasCtx("ctxdel")).toBe(false);
+  });
+
+  test("G8 re-registration clears the report and broadcasts session.ctx null", async () => {
+    expect((await post("/ctx", ctxBody({ session: "modeled" }))).status).toBe(200);
+    expect((await sessionsNow()).modeled.ctx).not.toBeNull();
+    const mark = events.length;
+    const res = await post("/sessions", { name: "modeled", path: "/tmp/modeled-3", bridgePort: BRIDGE_PORT });
+    expect(res.status).toBe(200);
+    await waitForEvent(mark, (x) => x.type === "session.ctx" && x.name === "modeled" && x.ctx === null);
+    const modeled = (await sessionsNow()).modeled;
+    expect(modeled.ctx).toBeNull();
+    expect(modeled.model).toBe("claude-opus-5-5");
+  });
+
+  test("G9 GET /sessions/:name serves ctx too", async () => {
+    expect((await post("/ctx", ctxBody())).status).toBe(200);
+    const one = (await (await fetch(`${BASE}/sessions/plain`)).json()) as Json;
+    expect((one.ctx as Json).pct).toBe(4);
+  });
+
+  test("G10 reports are never written to hub-registry.json", async () => {
+    expect((await post("/ctx", ctxBody())).status).toBe(200);
+    await sessionsNow();
+    await register("ctxsave");
+    const disk = JSON.parse(readFileSync(path.join(hubDir, "hub-registry.json"), "utf-8")) as { sessions: Json };
+    expect(Object.keys(disk.sessions)).toContain("ctxsave");
+    expect(allKeys(disk)).not.toContain("ctx");
+  });
+
+  test("G12 an older `at` is ignored; an equal or newer one applies", async () => {
+    await register("ctxorder");
+    const T = Date.now() - 10_000; // in the past: the router refuses an `at` more than 60 s ahead
+    const send = async (at: number, tokens: number) =>
+      (await (await post("/ctx", { ...ctxBody({ session: "ctxorder", ctx: { tokens, window: 1_000_000 } }), at })).json()) as Json;
+    const tokensNow = async () => ((await sessionsNow()).ctxorder.ctx as Json).tokens;
+    expect(await send(T, 100)).toEqual({ ok: true, applied: true });
+    const mark = events.length;
+    expect(await send(T - 1, 200)).toEqual({ ok: true, applied: false });
+    expect(await tokensNow()).toBe(100);
+    expect((await eventsAfter(mark)).filter((x) => x.type === "session.ctx" && x.name === "ctxorder")).toEqual([]);
+    expect(await send(T, 300)).toEqual({ ok: true, applied: true });
+    expect(await tokensNow()).toBe(300);
+    expect(await send(T + 1, 400)).toEqual({ ok: true, applied: true });
+    expect(await tokensNow()).toBe(400);
   });
 });

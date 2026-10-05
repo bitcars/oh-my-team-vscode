@@ -79,6 +79,80 @@ To opt back in:
   MCP file. An entry named `omt-bridge` or `omtv-bridge`, or one that runs
   `~/.oh-my-team/channel/bridge.ts`, is dropped.
 
+## Context and quota reporting
+
+Every omtv project session reports its model, context size, rate-limit quota
+and subagent counts to the omtv router, through a Claude Code mod in this
+plugin (`hooks/ctx-mod.js`). The router serves the latest report as `ctx` on
+`GET /sessions` and broadcasts it as a `session.ctx` event, for the VS Code
+panel. The wire format is section 1 of the WO-022 plan (also posted on fork
+issue #16).
+
+- **When it posts:** after each model request, at the end of each turn, after
+  a real compaction of the main conversation (tokens null until the next
+  request), on `/clear` (tokens 0) and on `/resume` (tokens null). An
+  unchanged report isn't re-sent.
+- **Who posts:** a process with `SESSION_NAME` and a local `ROUTER_URL` in its
+  env, and no `CLAUDE_CODE_TEAMMATE`. Agent-team teammates don't post.
+- **It adds at most 150 ms to a step:** each report waits at most 150 ms for
+  Claude Code, the POST is never awaited, and at most 4 POSTs are open at
+  once. A report that finishes after a newer one has gone out is dropped.
+- **The mod reads no transcript** and sends no cost and no context percentage
+  (the router computes the percentage).
+- **A report is all-or-nothing:** the router refuses the whole report (400)
+  when any field is invalid, for example a `resetsAt` that isn't ISO 8601 with
+  a zone, or an `at` more than 60 s ahead of the router's clock. The mod logs
+  the first refusal in the session (`ctx-mod: router answered 400`). A 404
+  (the session isn't registered yet) is expected at startup and not logged.
+
+The plugin view copies `hooks/` and `.claude-plugin/` instead of linking them,
+because Claude Code refuses a hooks module that resolves outside the plugin
+dir. So every file under `hooks/` (the mod, `status-hook.sh`, `hooks.json`)
+and `.claude-plugin/` stays as it was when the hub last started. After pulling
+or editing one, restart the hub:
+
+```
+~/.omtv/bin/omt hub stop && ~/.omtv/bin/omt hub start
+```
+
+`hub add` and interactive mode print a yellow warning when the view's
+`hooks/` or `plugin.json` no longer match the checkout's, or when `hooks/` is
+still a link from a view built before this change. A view rebuild while project sessions run swaps their mod file, and
+Claude Code reloads it.
+
+Known limits:
+
+- A fresh session reads `ctx: null` until its first prompt: Claude Code's
+  startup report fires before the session registers, and nothing else fires
+  until a prompt. After a router restart, an idle session reads null until
+  something changes.
+- `agents` is as of the last event in the session's process. A Task
+  subagent's own steps refresh it while the lead is idle; a teammate in its
+  own pane refreshes only on the lead's events, and a teammate pane that
+  died keeps its last status.
+- A `claude` started from inside a session (for example from its Bash tool)
+  inherits `SESSION_NAME` and `ROUTER_URL` and would report as that session.
+  It shows up as an alternating `sid`. For dev runs against this checkout:
+
+  ```
+  env -u SESSION_NAME -u ROUTER_URL claude --plugin-dir <checkout>
+  ```
+
+- This repo's default (non-profile) launcher sets the same two variables, so
+  this plugin, if loaded there, posts to that `ROUTER_URL` as well. The live
+  default hub runs a different checkout and router, which have no `/ctx` route.
+- If a Claude Code call the mod makes (the agent list, usage) never returns,
+  each event leaves one report waiting in the background. The turn itself
+  goes on after 150 ms.
+- After `/clear`, a background subagent that is still running can report the
+  lead's context as unknown (null) until the lead's next request.
+- Agent teams are off in omtv sessions unless `~/.omtv/settings.json` has
+  `{"env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"}}` (user settings
+  aren't read).
+- Don't run `/model` in an omtv session: Claude Code saves the choice to the
+  shared `~/.claude/settings.json` (fork issue #17). Start the session with
+  the model you want instead.
+
 ## Guards
 
 Every profile command checks the dir and ports first, before it calls
@@ -144,4 +218,11 @@ OMTV_ACCEPTANCE=1 bun test test/omtv-isolation.test.ts      # beside a live defa
 Every test that runs `bin/omt` goes through `test/omt-harness.ts`. The harness
 uses a `/tmp` sandbox, an allowlisted env, and fake `tmux`/`curl`/`claude`
 commands. Those refuse the default tmux server, ports 8800-8899 and the
-network. No test runs the real `claude` or opens a window.
+network. No test starts a real `claude` session or opens a window.
+
+The one real `claude` the tests run is `claude plugin test` and
+`claude plugin validate` for the ctx mod (`test/ctx-mod.test.ts` and its
+removal control). Both go through `runClaudePluginSandboxed` in the harness:
+`env -i`, a temp `HOME` and `CLAUDE_CONFIG_DIR`, no auto-update, and a check
+that the real `~/.claude.json` and `~/.claude/projects` never mention the temp
+dirs. They need a local `claude` 2.1.289 or newer and fail without one.

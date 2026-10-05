@@ -680,7 +680,7 @@ describe("T8 lifecycle", () => {
     expect(logLines(sb, "tmux").filter((l) => l.includes("new-session"))).toEqual([]);
   });
 
-  test("T11 the plugin view has no .mcp.json and replaces stale content instead of nesting", () => {
+  test("T11 the plugin view copies hooks/ and .claude-plugin/, links the rest, has no .mcp.json, and replaces stale content", () => {
     const sb = box({ fleetConfig: FLEET_CONFIG });
     writeProfilePorts(sb);
     writeProfileConfig(sb);
@@ -688,15 +688,78 @@ describe("T8 lifecycle", () => {
     mkdirSync(path.join(sb.omtHome, "plugin", "agents"), { recursive: true });
     writeFileSync(path.join(sb.omtHome, "plugin", "agents", "stale.md"), "x");
     writeFileSync(path.join(sb.omtHome, "plugin", ".mcp.json"), "{}");
+    // a hooks/ copy from an older build: a stale mod and a file the checkout no longer has
+    mkdirSync(path.join(sb.omtHome, "plugin", "hooks"), { recursive: true });
+    writeFileSync(path.join(sb.omtHome, "plugin", "hooks", "ctx-mod.js"), "// stale");
+    writeFileSync(path.join(sb.omtHome, "plugin", "hooks", "old-probe.js"), "// gone from the checkout");
     const r = runOmt(sb, ["hub", "start"], { timeoutMs: 120_000 });
     expect(r.code).toBe(0);
     const view = path.join(sb.omtHome, "plugin");
     expect(existsSync(path.join(view, ".mcp.json"))).toBe(false);
     expect(lstatSync(path.join(view, "agents")).isSymbolicLink()).toBe(true);
+    expect(lstatSync(path.join(view, "skills")).isSymbolicLink()).toBe(true);
     expect(existsSync(path.join(view, "agents", "stale.md"))).toBe(false);
     expect(existsSync(path.join(view, ".claude-plugin", "plugin.json"))).toBe(true);
+    // Claude Code refuses a hooks module that resolves outside the plugin dir, so these two are real copies
+    for (const e of ["hooks", ".claude-plugin"]) {
+      const st = lstatSync(path.join(view, e));
+      expect([e, st.isDirectory(), st.isSymbolicLink()]).toEqual([e, true, false]);
+    }
+    expect(readFileSync(path.join(view, "hooks", "ctx-mod.js"), "utf-8")).toBe(readFileSync(path.join(CHECKOUT, "hooks", "ctx-mod.js"), "utf-8"));
+    expect(readFileSync(path.join(view, "hooks", "hooks.json"), "utf-8")).toBe(readFileSync(path.join(CHECKOUT, "hooks", "hooks.json"), "utf-8"));
+    expect(existsSync(path.join(view, "hooks", "old-probe.js"))).toBe(false);
+    expect(existsSync(path.join(view, "hooks", "hooks"))).toBe(false);
     const argv = readFileSync(path.join(sb.root, "claude-hub.txt"), "utf-8").split("\n")[0];
     expect(argv).toContain(`--plugin-dir ${view}`);
+    runOmt(sb, ["hub", "stop"]);
+  });
+});
+
+/** Put the checkout's hooks/ back into a view, byte for byte. */
+function copyHooks(view: string) {
+  rmSync(path.join(view, "hooks"), { recursive: true, force: true });
+  mkdirSync(path.join(view, "hooks"));
+  for (const f of readdirSync(path.join(CHECKOUT, "hooks"))) {
+    writeFileSync(path.join(view, "hooks", f), readFileSync(path.join(CHECKOUT, "hooks", f)));
+  }
+}
+
+describe("T18 stale plugin view", () => {
+  test("T18 hub add and interactive mode warn when the view's hooks or manifest differ from the checkout's, or hooks/ is still a link", () => {
+    const { sb, start } = startedHub();
+    expect(start.code).toBe(0);
+    const view = path.join(sb.omtHome, "plugin");
+    const WARN = "The plugin view's hooks differ from the checkout's";
+    // presence control: a view that matches the checkout prints no warning
+    const quiet = runOmt(sb, ["hub", "add", project(sb, "fresh")], { timeoutMs: 120_000 });
+    expect(quiet.code).toBe(0);
+    expect(quiet.stderr).not.toContain(WARN);
+    // a hooks file that drifted since the hub started
+    writeFileSync(path.join(view, "hooks", "ctx-mod.js"), "// drifted");
+    const drifted = runOmt(sb, ["hub", "add", project(sb, "drifted")], { timeoutMs: 120_000 });
+    expect(drifted.code).toBe(0);
+    expect(drifted.stderr).toContain(WARN);
+    expect(readFileSync(path.join(view, "hooks", "ctx-mod.js"), "utf-8")).toBe("// drifted");
+    // the same drift seen from the other caller, ensure_profile_dirs (interactive mode, hub running)
+    trust(sb, sb.root);
+    const interactive = runOmt(sb, ["__interactive-cmd"]);
+    expect(interactive.code).toBe(0);
+    expect(interactive.stderr).toContain(WARN);
+    // hooks/ back in sync, but the manifest drifted
+    copyHooks(view);
+    writeFileSync(path.join(view, ".claude-plugin", "plugin.json"), "{}");
+    const manifest = runOmt(sb, ["hub", "add", project(sb, "manifest")], { timeoutMs: 120_000 });
+    expect(manifest.code).toBe(0);
+    expect(manifest.stderr).toContain(WARN);
+    // a view built before hooks/ was copied (a link to the checkout); everything else in sync,
+    // so only the link itself can trigger the warning
+    writeFileSync(path.join(view, ".claude-plugin", "plugin.json"), readFileSync(path.join(CHECKOUT, ".claude-plugin", "plugin.json")));
+    rmSync(path.join(view, "hooks"), { recursive: true, force: true });
+    symlinkSync(path.join(CHECKOUT, "hooks"), path.join(view, "hooks"));
+    const linked = runOmt(sb, ["hub", "add", project(sb, "linked")], { timeoutMs: 120_000 });
+    expect(linked.code).toBe(0);
+    expect(linked.stderr).toContain(WARN);
+    expect(lstatSync(path.join(view, "hooks")).isSymbolicLink()).toBe(true);
     runOmt(sb, ["hub", "stop"]);
   });
 });

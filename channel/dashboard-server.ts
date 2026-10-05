@@ -32,6 +32,24 @@ interface RegistryView {
  *  traffic must always be mirrored as "team" (never "reply"). */
 export type ReplyKind = "reply" | "escalate" | "team";
 
+/** One rate-limit window of a ctx report. */
+export type CtxQuotaWindow = { pct: number; resetsAt: string | null };
+
+/** A session's latest model / context / quota / agents report (POST /ctx,
+ *  fork #16), as GET /sessions serves it and `session.ctx` carries it. `pct`
+ *  and `ts` are the router's; the rest is the ctx mod's. In memory only. */
+export type CtxEntry = {
+  ts: number;
+  at: number;
+  sid: string | null;
+  model: string | null;
+  tokens: number | null;
+  window: number;
+  pct: number | null;
+  quota: { fiveHour: CtxQuotaWindow | null; sevenDay: CtxQuotaWindow | null } | null;
+  agents: { running: number; alive: number } | null;
+};
+
 /** Events pushed to dashboard clients over /ws/events. Keep flat + JSON-safe. */
 export type DashboardEvent =
   | { type: "session.registered"; name: string; path: string; threadId: string; bridgePort: number; threadDisplayName: string; startedAt: string }
@@ -43,6 +61,7 @@ export type DashboardEvent =
   | { type: "session.permission.resolved"; requestId: string }
   | { type: "session.ask"; name: string; token: string; question: string; options: string[]; ts: string }
   | { type: "session.ask.resolved"; name: string; token: string; choice: string }
+  | { type: "session.ctx"; name: string; ctx: CtxEntry | null }
   | { type: "router.log"; line: string };
 
 export type DashboardWsData =

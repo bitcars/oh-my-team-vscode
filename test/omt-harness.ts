@@ -19,7 +19,9 @@
  * - Nothing here ever runs the real `claude`: the claude shim dumps its env
  *   and argv, runs the status hook once, then starts the real bridge.ts,
  *   but only if its ROUTER_URL and BRIDGE_PORT are set and outside
- *   8800-8899.
+ *   8800-8899. The one exception is runClaudePluginSandboxed (WO-022):
+ *   `claude plugin test|validate <dir>`, under `env -i` with a temp HOME and
+ *   CLAUDE_CONFIG_DIR, which starts no session.
  *
  * Limit: the shims see only processes that look tools up on PATH. bun's own
  * fetch and serve (the router, bridge.ts, the tests' listeners) bypass them.
@@ -32,7 +34,8 @@
  */
 
 import { spawnSync } from "bun";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import path from "node:path";
 
 export const CHECKOUT = path.resolve(import.meta.dir, "..");
@@ -393,3 +396,100 @@ export function writeProfilePorts(sb: Sandbox): { router: number; hub: number; b
 }
 
 export { REAL };
+
+// ── claude plugin test / validate, sandboxed (WO-022) ──────────────────────
+
+/** The real claude binary: $CLAUDE_BIN, else ~/.local/bin/claude resolved. null when absent. */
+export function realClaudeBin(): string | null {
+  const candidate = process.env.CLAUDE_BIN || path.join(userInfo().homedir, ".local", "bin", "claude");
+  try {
+    return realpathSync(candidate);
+  } catch {
+    return null;
+  }
+}
+
+/** A `claude plugin test` of the ctx mod takes about 0.5 s; anything near this is a hang. */
+const PLUGIN_RUN_TIMEOUT_MS = 60_000;
+
+export interface PluginRun {
+  code: number;
+  out: string;
+  /** The run's temp dir: home/, config/ (CLAUDE_CONFIG_DIR) and tmp/. The caller removes it. */
+  sandbox: string;
+}
+
+/** ~/.claude/projects names a path the way Claude Code does: every non-alphanumeric as "-". */
+function claudeProjectName(p: string): string {
+  return p.replace(/[^A-Za-z0-9]/g, "-");
+}
+
+function listOrEmpty(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Run `claude plugin <sub> <dir>`: loads the plugin's hooks module the way the
+ * engine will and, for `test`, runs its kit tests. No session starts. The
+ * child gets `env -i` with HOME, CLAUDE_CONFIG_DIR and TMPDIR under a fresh
+ * temp dir, auto-update off and no nonessential traffic.
+ *
+ * Throws HARNESS BROKEN when the binary is missing, or when the run made the
+ * real ~/.claude.json mention the temp dir or `dir` (a mention that was there
+ * before the run, like a trusted checkout, doesn't count), or ~/.claude/projects
+ * gained an entry for either. These are content checks on purpose: the live
+ * fleet rewrites ~/.claude.json every 30-60 s, so a before/after hash would
+ * flake. Measured: `plugin test` writes nothing at all; `plugin validate`
+ * writes CLAUDE_CONFIG_DIR/.claude.json (WO-022 addendum A-R1, A-R2).
+ */
+export function runClaudePluginSandboxed(sub: "test" | "validate", dir: string): PluginRun {
+  const bin = realClaudeBin();
+  if (!bin) throw new Error("HARNESS BROKEN: no claude binary ($CLAUDE_BIN or ~/.local/bin/claude)");
+  const realHome = userInfo().homedir;
+  const sandbox = mkdtempSync(path.join(TMP_ROOT, "omt-claude-plugin-"));
+  for (const d of ["home", "config", "tmp"]) mkdirSync(path.join(sandbox, d));
+  const projectsDir = path.join(realHome, ".claude", "projects");
+  const claudeJson = path.join(realHome, ".claude.json");
+  const readClaudeJson = () => (existsSync(claudeJson) ? readFileSync(claudeJson, "utf-8") : "");
+  // Each path in both spellings macOS gives a temp dir: /private/tmp/x and /tmp/x.
+  const needles = Array.from(
+    new Set([sandbox, dir, realpathSync(dir)].flatMap((p) => [p, p.replace(/^\/private\/tmp\//, "/tmp/")]))
+  );
+  const cjBefore = readClaudeJson();
+  const mentionedBefore = new Set(needles.filter((n) => cjBefore.includes(n)));
+  const before = new Set(listOrEmpty(projectsDir));
+  const r = spawnSync([bin, "plugin", sub, dir], {
+    env: {
+      PATH: "/usr/bin:/bin",
+      HOME: path.join(sandbox, "home"),
+      CLAUDE_CONFIG_DIR: path.join(sandbox, "config"),
+      TMPDIR: path.join(sandbox, "tmp"),
+      DISABLE_AUTOUPDATER: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      TERM: "dumb",
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: PLUGIN_RUN_TIMEOUT_MS,
+  });
+  const out = r.stdout.toString() + r.stderr.toString();
+  if (r.exitedDueToTimeout) {
+    rmSync(sandbox, { recursive: true, force: true });
+    throw new Error(`HARNESS BROKEN: claude plugin ${sub} ran past ${PLUGIN_RUN_TIMEOUT_MS} ms\n${out}`);
+  }
+  const cj = readClaudeJson();
+  const leakedPaths = needles.filter((n) => !mentionedBefore.has(n) && cj.includes(n));
+  const projectNames = needles.map(claudeProjectName);
+  const newProjects = listOrEmpty(projectsDir).filter((e) => !before.has(e) && projectNames.some((n) => e.includes(n)));
+  if (leakedPaths.length > 0 || newProjects.length > 0) {
+    rmSync(sandbox, { recursive: true, force: true });
+    throw new Error(
+      `HARNESS BROKEN: claude plugin ${sub} reached the real config: ~/.claude.json mentions ${JSON.stringify(leakedPaths)}; new ~/.claude/projects entries ${JSON.stringify(newProjects)}`
+    );
+  }
+  return { code: r.exitCode ?? -1, out, sandbox };
+}

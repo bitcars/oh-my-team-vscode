@@ -33,6 +33,9 @@ attachments/
 
 # Claude Code local state
 .sisyphus/
+# written by Claude Code when it loads hooks/ctx-mod.js from this checkout (dev runs)
+.claude-plugin/types/
+/tsconfig.json
 channel/dashboard/dist/
 
 # Scratch / marketing drafts
