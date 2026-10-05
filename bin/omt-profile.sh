@@ -348,15 +348,36 @@ sys.exit(0 if p.get("hasTrustDialogAccepted") is True else 1)'; then
 
 # The plugin view: the checkout's plugin content WITHOUT its .mcp.json (that
 # file declares the plugin server omt-bridge, which would start a second
-# bridge). Rebuilt from scratch by hub start.
+# bridge). Rebuilt from scratch by hub start. hooks/ and .claude-plugin/ are
+# COPIES, the rest links: Claude Code refuses a hooks module that resolves
+# outside the plugin dir ("hooks path escapes plugin directory"), and it
+# writes generated types under .claude-plugin/. So everything under hooks/
+# stays as it was at the last rebuild; warn_stale_view says when it drifted.
 build_plugin_view() {
     [ -n "$PLUGIN_ARG" ] && [[ "$PLUGIN_ARG" == "$OMT_DIR"/* ]] || { _gfail "bad plugin view path"; return 3; }
     rm -rf "$PLUGIN_ARG"
     mkdir -p "$PLUGIN_ARG"
     local e
     for e in agents hooks skills .claude-plugin settings.json CLAUDE.md channel bin; do
-        [ -e "$PLUGIN_DIR/$e" ] && ln -s "$PLUGIN_DIR/$e" "$PLUGIN_ARG/$e"
+        [ -e "$PLUGIN_DIR/$e" ] || continue
+        case "$e" in
+            hooks|.claude-plugin) cp -R "$PLUGIN_DIR/$e" "$PLUGIN_ARG/$e" ;;
+            *) ln -s "$PLUGIN_DIR/$e" "$PLUGIN_ARG/$e" ;;
+        esac
     done
+    return 0
+}
+
+# warn_stale_view: say when the view's hooks/ no longer match the checkout
+# (a hooks or plugin.json change since the last hub start, or a view built
+# before hooks/ was copied). Only a hub restart rebuilds the view.
+warn_stale_view() {
+    [ -e "$PLUGIN_ARG/hooks" ] || [ -L "$PLUGIN_ARG/hooks" ] || return 0
+    if [ -L "$PLUGIN_ARG/hooks" ] \
+        || ! diff -rq "$PLUGIN_DIR/hooks" "$PLUGIN_ARG/hooks" >/dev/null 2>&1 \
+        || ! cmp -s "$PLUGIN_DIR/.claude-plugin/plugin.json" "$PLUGIN_ARG/.claude-plugin/plugin.json"; then
+        echo -e "${YELLOW}The plugin view's hooks differ from the checkout's. Restart the hub to load the checkout's: $OMT_CLI hub stop && $OMT_CLI hub start${RESET}" >&2
+    fi
     return 0
 }
 
@@ -367,6 +388,8 @@ ensure_profile_dirs() {
     chmod 700 "$OMT_DIR/mcp"
     if [ ! -d "$PLUGIN_ARG" ] || ! omt_tmux has-session -t "$(tgt omt-hub)" 2>/dev/null; then
         build_plugin_view || return 3
+    else
+        warn_stale_view
     fi
     write_profile_shim
 }
@@ -645,7 +668,11 @@ profile_hub_add() {
     fi
 
     trust_check "$PROJECT_DIR" || return 4
-    [ -d "$PLUGIN_ARG" ] && [ -x "$OMT_CLI" ] || ensure_profile_dirs || return 3
+    if [ -d "$PLUGIN_ARG" ] && [ -x "$OMT_CLI" ]; then
+        warn_stale_view
+    else
+        ensure_profile_dirs || return 3
+    fi
     PORT=$(alloc_port) || return 3
     if port_listening "$PORT"; then
         _gfail "port $PORT answers before the session exists (a foreign bridge)"; return 3

@@ -26,7 +26,7 @@ import {
   broadcastEvent,
   dashboardWebSocketHandlers,
 } from "./dashboard-server";
-import type { DashboardEvent, ReplyKind } from "./dashboard-server";
+import type { CtxEntry, CtxQuotaWindow, DashboardEvent, ReplyKind } from "./dashboard-server";
 import path from "node:path";
 import { realpathSync, statSync } from "node:fs";
 import { userInfo } from "node:os";
@@ -225,6 +225,120 @@ let injectCounter = 0;
 
 /** Disambiguates POST /team-message message ids sent within the same ms. */
 let teamMessageCounter = 0;
+
+// ── ctx reports (fork #16) ─────────────────────────────────────────────────
+//
+// A session's Claude Code mod (hooks/ctx-mod.js) POSTs its model, context
+// size, rate-limit quota and subagent counts to /ctx. The router keeps the
+// latest report per session, serves it as `ctx` on GET /sessions and
+// /sessions/:name, and broadcasts it as `session.ctx`. `pct` is computed here
+// and only here. Reports carry the mod's own `at`; one older than the stored
+// report is ignored, so a late post never overwrites a newer reading. A report
+// is all-or-nothing: one invalid field refuses the whole report with 400.
+// In memory only: never written to hub-registry.json, empty after a restart,
+// dropped when the session is removed or (re-)registered.
+
+const ctxBySession = new Map<string, CtxEntry>();
+
+const CTX_MAX_WINDOW = 10_000_000;
+const CTX_MAX_TOKENS = 10_000_000;
+const CTX_MAX_AGENTS = 1000;
+const CTX_MAX_QUOTA_PCT = 1000;
+/** First-party, Bedrock (`:`), Vertex (`@`) and gateway (`/`) model ids; nothing markup can use. */
+const CTX_MODEL_RE = /^[A-Za-z0-9._:@\/\[\]-]{1,100}$/;
+const CTX_SID_RE = /^[A-Za-z0-9-]{1,64}$/;
+/** ISO 8601 date-time with a zone, as Claude Code sends `resetsAt` (the extension checks the same). */
+const CTX_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+/** `at` is epoch milliseconds, from 2001-09-09 on... */
+const CTX_AT_MIN = 1_000_000_000_000;
+/** ...and at most this far ahead of the router's clock, so one post can't pin a session. */
+const CTX_AT_MAX_AHEAD_MS = 60_000;
+
+function isIntIn(x: unknown, lo: number, hi: number): x is number {
+  return Number.isInteger(x) && (x as number) >= lo && (x as number) <= hi;
+}
+
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  return x !== null && typeof x === "object" && !Array.isArray(x);
+}
+
+/** One quota window: null/absent, or {pct, resetsAt}. A string is the error. */
+function parseQuotaWindow(w: unknown, label: string): CtxQuotaWindow | null | string {
+  if (w === undefined || w === null) return null;
+  if (!isPlainObject(w)) return `quota.${label} must be an object or null`;
+  const p = w.pct;
+  if (typeof p !== "number" || !Number.isFinite(p) || !(p >= 0 && p <= CTX_MAX_QUOTA_PCT)) {
+    return `quota.${label}.pct must be a number 0..${CTX_MAX_QUOTA_PCT}`;
+  }
+  const r = w.resetsAt;
+  if (r === undefined || r === null) return { pct: p, resetsAt: null };
+  if (typeof r !== "string" || !(r.length <= 40 && CTX_ISO_RE.test(r) && !Number.isNaN(Date.parse(r)))) {
+    return `quota.${label}.resetsAt must be null or an ISO 8601 date-time of at most 40 chars`;
+  }
+  return { pct: p, resetsAt: r };
+}
+
+/** Validate a POST /ctx body into the stored entry. A string is the error. */
+export function parseCtx(body: Record<string, unknown>, now: number = Date.now()): CtxEntry | string {
+  const at = body.at;
+  if (!Number.isInteger(at) || (at as number) < CTX_AT_MIN) {
+    return "at must be an integer epoch-ms timestamp";
+  }
+  if ((at as number) - now > CTX_AT_MAX_AHEAD_MS) {
+    return `at must not be more than ${CTX_AT_MAX_AHEAD_MS} ms ahead of the router's clock`;
+  }
+  const c = body.ctx;
+  if (!isPlainObject(c)) return "ctx must be an object";
+  if (!isIntIn(c.window, 1, CTX_MAX_WINDOW)) return `ctx.window must be an integer 1..${CTX_MAX_WINDOW}`;
+  const window = c.window;
+  const tokens = c.tokens;
+  if (!(tokens === null || isIntIn(tokens, 0, CTX_MAX_TOKENS))) {
+    return `ctx.tokens must be null or an integer 0..${CTX_MAX_TOKENS}`;
+  }
+  const model = body.model ?? null;
+  if (!(model === null || (typeof model === "string" && CTX_MODEL_RE.test(model)))) {
+    return "model must be null or a model id";
+  }
+  const sid = body.sid ?? null;
+  if (!(sid === null || (typeof sid === "string" && CTX_SID_RE.test(sid)))) {
+    return "sid must be null or a session id";
+  }
+  let quota: CtxEntry["quota"] = null;
+  if (body.quota !== undefined && body.quota !== null) {
+    if (!isPlainObject(body.quota)) return "quota must be an object or null";
+    const fiveHour = parseQuotaWindow(body.quota.fiveHour, "fiveHour");
+    if (typeof fiveHour === "string") return fiveHour;
+    const sevenDay = parseQuotaWindow(body.quota.sevenDay, "sevenDay");
+    if (typeof sevenDay === "string") return sevenDay;
+    quota = { fiveHour, sevenDay };
+  }
+  let agents: CtxEntry["agents"] = null;
+  if (body.agents !== undefined && body.agents !== null) {
+    const a = body.agents;
+    if (!isPlainObject(a) || !isIntIn(a.running, 0, CTX_MAX_AGENTS) || !isIntIn(a.alive, 0, CTX_MAX_AGENTS)) {
+      return `agents must be null or {running, alive} integers 0..${CTX_MAX_AGENTS}`;
+    }
+    if (!(a.running <= a.alive)) return "agents.running must not exceed agents.alive";
+    agents = { running: a.running, alive: a.alive };
+  }
+  const pct = tokens === null ? null : Math.round((tokens * 100) / window);
+  return { ts: now, at: at as number, sid, model, tokens, window, pct, quota, agents };
+}
+
+/** A session as GET /sessions serves it: a NEW object with its ctx (or null). */
+function withCtx(name: string, s: SessionEntry): SessionEntry & { ctx: CtxEntry | null } {
+  return { ...s, ctx: ctxBySession.get(name) ?? null };
+}
+
+/** Drop a session's report; tell clients when there was one. */
+function clearCtx(name: string): void {
+  if (ctxBySession.delete(name)) broadcastEvent({ type: "session.ctx", name, ctx: null });
+}
+
+/** Test-only: whether a report is stored for `name`. */
+export function hasCtx(name: string): boolean {
+  return ctxBySession.has(name);
+}
 
 // ── ask(): pending decisions ───────────────────────────────────────────────
 //
@@ -804,18 +918,19 @@ Bun.serve({
     // ── List all sessions ────────────────────────────────────────────
 
     if (method === "GET" && url.pathname === "/sessions") {
-      return Response.json(registry.sessions);
+      return Response.json(
+        Object.fromEntries(Object.entries(registry.sessions).map(([k, s]) => [k, withCtx(k, s)]))
+      );
     }
 
     // ── Get one session ──────────────────────────────────────────────
 
     if (method === "GET" && url.pathname.startsWith("/sessions/")) {
       const name = url.pathname.split("/")[2];
-      const session = registry.sessions[name];
-      if (!session) {
+      if (!Object.hasOwn(registry.sessions, name)) {
         return Response.json({ error: "session not found" }, { status: 404 });
       }
-      return Response.json(session);
+      return Response.json(withCtx(name, registry.sessions[name]));
     }
 
     // ── Register a new session ───────────────────────────────────────
@@ -858,6 +973,7 @@ Bun.serve({
         existing.startedAt = new Date().toISOString();
         existing.path = path;
         saveRegistry(registry);
+        clearCtx(name);
 
         process.stderr.write(
           `omt-router: Re-registered session "${name}" → port ${bridgePort} (reused thread ${existing.threadId})\n`
@@ -920,6 +1036,7 @@ Bun.serve({
       registry.sessions[name] = entry;
       saveRegistry(registry);
       pendingRegistrations.delete(name);
+      clearCtx(name);
 
       process.stderr.write(
         `omt-router: Registered session "${name}" → port ${bridgePort}, thread ${threadId}\n`
@@ -968,12 +1085,40 @@ Bun.serve({
 
       delete registry.sessions[name];
       saveRegistry(registry);
+      ctxBySession.delete(name);
 
       process.stderr.write(`omt-router: Unregistered session "${name}"\n`);
 
       broadcastEvent({ type: "session.removed", name });
 
       return Response.json({ status: "removed" });
+    }
+
+    // ── ctx report from a session's ctx mod (fork #16) ───────────────
+
+    if (method === "POST" && url.pathname === "/ctx") {
+      const body = await readJsonObject(req);
+      if (!body) {
+        return Response.json({ error: "JSON object body required" }, { status: 400 });
+      }
+      const session = body.session;
+      if (typeof session !== "string") {
+        return Response.json({ error: "session (string) required" }, { status: 400 });
+      }
+      if (!Object.hasOwn(registry.sessions, session)) {
+        return Response.json({ error: "session not found" }, { status: 404 });
+      }
+      const entry = parseCtx(body);
+      if (typeof entry === "string") {
+        return Response.json({ error: entry }, { status: 400 });
+      }
+      const stored = ctxBySession.get(session);
+      if (stored && entry.at < stored.at) {
+        return Response.json({ ok: true, applied: false });
+      }
+      ctxBySession.set(session, entry);
+      broadcastEvent({ type: "session.ctx", name: session, ctx: entry });
+      return Response.json({ ok: true, applied: true });
     }
 
     // ── Reply from a bridge → adapter ────────────────────────────────
