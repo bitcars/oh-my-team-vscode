@@ -148,6 +148,7 @@ hub_init() {
 
     mkdir -p "$OMT_DIR"
     if [ -n "$OMT_PROFILE" ]; then profile_guard_dirs || exit 3; fi
+    if [ -n "$OMT_PROFILE" ]; then profile_hub_model_snapshot; fi
 
     # If no flags → run the modern interactive flow (arrow keys, masked input, spinners)
     # (not in profile mode: the credential guard must run before any API call)
@@ -280,6 +281,7 @@ print('')
   }
 }
 EOF
+        if [ -n "$OMT_PROFILE" ]; then profile_hub_model_keep || exit 3; fi
 
         echo ""
         echo -e "  ${GREEN}${BOLD}Hub configured!${RESET}"
@@ -443,6 +445,7 @@ print('https://api.slack.com/apps?new_app=1&manifest_json=' + urllib.parse.quote
   }
 }
 EOF
+        if [ -n "$OMT_PROFILE" ]; then profile_hub_model_keep || exit 3; fi
 
         echo ""
         echo -e "  ${GREEN}${BOLD}Hub configured!${RESET}"

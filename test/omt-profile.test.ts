@@ -1002,3 +1002,362 @@ describe("T15 dashboard actions", () => {
     runOmt(sb, ["hub", "stop"]);
   });
 });
+
+// ── T19: the hub's model (WO-025, fork #22) ───────────────────────────────
+//
+// The fake claude rewrites claude-<session>.txt only when it runs, so every
+// launch a test asserts on is preceded by clearArgv and followed by launched(),
+// which fails if the file wasn't rewritten.
+
+const ABSENT = Symbol("absent");
+const MODEL_FLAG = /(^|\s)--model(\s|=|$)/g;
+const MODEL_REFUSED = "hubModel isn't a model id";
+const INJECTION = "x'; touch PWNED; '";
+
+/** A guard-mode sandbox with a trusted hub dir and a profile config holding hubModel (or none). */
+function modelHub(hubModel: unknown): Sandbox {
+  const sb = box({ mode: "guard", fleetAgents: true, fleetConfig: FLEET_CONFIG });
+  writeProfilePorts(sb);
+  writeProfileConfig(sb);
+  setHubModel(sb, hubModel);
+  mkdirSync(path.join(sb.omtHome, "hub"), { recursive: true });
+  trust(sb, path.join(sb.omtHome, "hub"));
+  return sb;
+}
+
+function setHubModel(sb: Sandbox, v: unknown) {
+  const f = path.join(sb.omtHome, "hub-config.json");
+  const j = JSON.parse(readFileSync(f, "utf-8"));
+  if (v === ABSENT) delete j.hubModel;
+  else j.hubModel = v;
+  writeFileSync(f, JSON.stringify(j));
+}
+
+/** Set (string) or remove (undefined) registry `model`s. Only while the hub is stopped. */
+function setRegistryModels(sb: Sandbox, models: Record<string, string | undefined>) {
+  const f = path.join(sb.omtHome, "hub-registry.json");
+  const j = JSON.parse(readFileSync(f, "utf-8"));
+  for (const [name, m] of Object.entries(models)) {
+    if (!j.sessions?.[name]) throw new Error(`registry has no entry '${name}' (did its start or add fail?)`);
+    if (m === undefined) delete j.sessions[name].model;
+    else j.sessions[name].model = m;
+  }
+  writeFileSync(f, JSON.stringify(j, null, 2));
+}
+
+function registryModels(sb: Sandbox): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [name, e] of Object.entries(registry(sb))) out[name] = (e as { model?: unknown }).model;
+  return out;
+}
+
+function clearArgv(sb: Sandbox, ...sessions: string[]) {
+  for (const s of sessions) writeFileSync(path.join(sb.root, `claude-${s}.txt`), "");
+}
+
+/** The argv line of a launch since clearArgv; fails unless it happened, with or without --continue. */
+function launched(sb: Sandbox, session: string, cont: boolean): string {
+  const f = path.join(sb.root, `claude-${session}.txt`);
+  const argv = existsSync(f) ? readFileSync(f, "utf-8").split("\n")[0] : "";
+  expect({ session, launched: argv.startsWith("ARGV ") }).toEqual({ session, launched: true });
+  expect({ session, continue: / --continue( |$)/.test(argv) }).toEqual({ session, continue: cont });
+  return argv;
+}
+
+/** model null: no --model in any form. Otherwise exactly one, followed by the value. */
+function expectModel(step: string, argv: string, model: string | null) {
+  const flags = (argv.match(MODEL_FLAG) ?? []).length;
+  expect({ step, flags }).toEqual({ step, flags: model === null ? 0 : 1 });
+  if (model !== null) expect({ step, has: argv.includes(` --model ${model} `) }).toEqual({ step, has: true });
+}
+
+/** The first start registered the hub, so the next start resumes it (--continue). */
+function expectRegistered(sb: Sandbox, step: string) {
+  expect({ step, initialized: existsSync(path.join(sb.omtHome, ".hub-initialized")) }).toEqual({ step, initialized: true });
+}
+
+function newSessions(sb: Sandbox): string[] {
+  return logLines(sb, "tmux").filter((l) => / new-session /.test(l));
+}
+
+/** Every file named PWNED under root (symlinks not followed). */
+function findPwned(root: string): string[] {
+  const out: string[] = [];
+  // Sessions may still be running: a file or dir that goes away mid-walk is skipped.
+  const gone = (e: unknown) => (e as NodeJS.ErrnoException).code === "ENOENT";
+  const walk = (dir: string) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch (e) {
+      if (gone(e)) return;
+      throw e;
+    }
+    for (const name of names) {
+      const full = path.join(dir, name);
+      if (name === "PWNED") out.push(full);
+      let st;
+      try {
+        st = lstatSync(full);
+      } catch (e) {
+        if (gone(e)) continue;
+        throw e;
+      }
+      if (st.isDirectory()) walk(full);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+describe("T19 hub model", () => {
+  test("T19a hubModel launches the hub with --model on the first start and on --continue; project sessions get none, after add and after restore", () => {
+    const sb = modelHub("fable");
+    clearArgv(sb, "hub");
+    expect(runOmt(sb, ["hub", "start"], { timeoutMs: 120_000 }).code).toBe(0);
+    expectModel("hub start", launched(sb, "hub", false), "fable");
+    expectRegistered(sb, "hub start");
+
+    const proj = project(sb, "proj");
+    clearArgv(sb, "proj");
+    expect(runOmt(sb, ["hub", "add", proj], { timeoutMs: 120_000 }).code).toBe(0);
+    expectModel("proj add", launched(sb, "proj", false), null);
+
+    expect(runOmt(sb, ["hub", "stop"]).code).toBe(0);
+    clearArgv(sb, "hub", "proj");
+    expect(runOmt(sb, ["hub", "start"], { timeoutMs: 120_000 }).code).toBe(0);
+    expectModel("hub restart", launched(sb, "hub", true), "fable");
+    expectModel("proj restore", launched(sb, "proj", true), null);
+    runOmt(sb, ["hub", "stop"]);
+  }, 400_000);
+
+  test("T19b without hubModel, or with it null or \"\", no session gets --model; the registry's hub model is ignored; user-level settings are never used or written", () => {
+    const sb = modelHub(ABSENT);
+    // Decoys: a model in the user's settings, in the profile's settings, and
+    // (once the registry exists) on the registry's hub entry.
+    const userSettings = path.join(sb.home, ".claude", "settings.json");
+    mkdirSync(path.dirname(userSettings), { recursive: true });
+    writeFileSync(userSettings, JSON.stringify({ model: "sonnet" }));
+    writeFileSync(path.join(sb.omtHome, "settings.json"), JSON.stringify({ model: "haiku" }));
+    const userSha = sha(userSettings);
+    const homeBefore = manifest(sb.home, [".omtv", "Library"]);
+    const untouched = (step: string) => {
+      expect({ step, sha: sha(userSettings) }).toEqual({ step, sha: userSha });
+      expect({ step, home: manifest(sb.home, [".omtv", "Library"]) }).toEqual({ step, home: homeBefore });
+    };
+
+    clearArgv(sb, "hub");
+    expect(runOmt(sb, ["hub", "start"], { timeoutMs: 120_000 }).code).toBe(0);
+    expectModel("first start, absent", launched(sb, "hub", false), null);
+    expectRegistered(sb, "first start");
+    untouched("first start");
+    const proj = project(sb, "proj");
+    clearArgv(sb, "proj");
+    expect(runOmt(sb, ["hub", "add", proj], { timeoutMs: 120_000 }).code).toBe(0);
+    expectModel("proj add", launched(sb, "proj", false), null);
+    untouched("add");
+    expect(runOmt(sb, ["hub", "stop"]).code).toBe(0);
+    untouched("stop");
+
+    setRegistryModels(sb, { hub: "claude-opus-5-5" });
+    for (const [label, v] of [["absent", ABSENT], ["null", null], ["empty", ""]] as const) {
+      setHubModel(sb, v);
+      clearArgv(sb, "hub", "proj");
+      expect({ label, code: runOmt(sb, ["hub", "start"], { timeoutMs: 120_000 }).code }).toEqual({ label, code: 0 });
+      expectModel(`hub, hubModel ${label}`, launched(sb, "hub", true), null);
+      expectModel(`proj restore, hubModel ${label}`, launched(sb, "proj", true), null);
+      untouched(`start, hubModel ${label}`);
+      expect(runOmt(sb, ["hub", "stop"]).code).toBe(0);
+      untouched(`stop, hubModel ${label}`);
+    }
+    // presence: the registry decoy was there for every cycle
+    expect(registryModels(sb).hub).toBe("claude-opus-5-5");
+  }, 600_000);
+
+  test("T19c start and restore pass each model verbatim and quoted; a model-less row gets none; the hub ignores the registry", () => {
+    const sb = modelHub("opus[1m]");
+    // An unquoted opus[1m] would glob to this file in the hub's cwd.
+    writeFileSync(path.join(sb.omtHome, "hub", "opus1"), "");
+    expect(runOmt(sb, ["hub", "start"], { timeoutMs: 120_000 }).code).toBe(0);
+    expectRegistered(sb, "first start");
+    for (const name of ["proj", "proj3", "proj2"]) {
+      expect(runOmt(sb, ["hub", "add", project(sb, name)], { timeoutMs: 120_000 }).code).toBe(0);
+    }
+    expect(runOmt(sb, ["hub", "stop"]).code).toBe(0);
+    setRegistryModels(sb, { hub: "claude-haiku-x", proj: "claude-opus-5-5", proj3: undefined, proj2: "claude-nope-9" });
+    // proj3 (no model) comes right after proj (a model), so a carried-over model would show
+    expect(Object.keys(registry(sb))).toEqual(["hub", "proj", "proj3", "proj2"]);
+
+    const want = { hub: "opus[1m]", proj: "claude-opus-5-5", proj3: null, proj2: "claude-nope-9" };
+    for (const round of ["restore", "second restore"]) {
+      clearArgv(sb, ...Object.keys(want));
+      expect({ round, code: runOmt(sb, ["hub", "start"], { timeoutMs: 180_000 }).code }).toEqual({ round, code: 0 });
+      for (const [name, model] of Object.entries(want)) expectModel(`${round}: ${name}`, launched(sb, name, true), model);
+      expect(runOmt(sb, ["hub", "stop"]).code).toBe(0);
+      expect({ round, models: registryModels(sb) }).toEqual({
+        round,
+        models: { hub: "claude-haiku-x", proj: "claude-opus-5-5", proj3: undefined, proj2: "claude-nope-9" },
+      });
+    }
+  }, 600_000);
+
+  test("T19d1 a hubModel outside the allowed set is refused before anything starts, without printing it", () => {
+    const sb = modelHub(ABSENT);
+    // value, then a part of it that must never be printed (null: nothing distinctive)
+    const cases: [unknown, string | null][] = [
+      [INJECTION, "touch PWNED"],
+      ["a b", "a b"],
+      ["$(touch PWNED)", "touch PWNED"],
+      ["`touch PWNED`", "touch PWNED"],
+      ["a".repeat(101), "a".repeat(20)],
+      ["fable\n", "fable"],
+      [5, null],
+      [{}, null],
+    ];
+    for (const [v, secret] of cases) {
+      const label = JSON.stringify(v);
+      setHubModel(sb, v);
+      writeFileSync(path.join(sb.log, "tmux.log"), "");
+      const r = runOmt(sb, ["hub", "start"], { timeoutMs: 60_000 });
+      expect({ label, code: r.code }).toEqual({ label, code: 3 });
+      expect({ label, refused: r.stderr.includes(MODEL_REFUSED) }).toEqual({ label, refused: true });
+      if (secret !== null) expect({ label, printed: (r.stdout + r.stderr).includes(secret) }).toEqual({ label, printed: false });
+      expect({ label, started: newSessions(sb) }).toEqual({ label, started: [] });
+    }
+    expect(findPwned(sb.root)).toEqual([]);
+    // presence control: in this same sandbox a valid hubModel starts both sessions
+    setHubModel(sb, "fable");
+    writeFileSync(path.join(sb.log, "tmux.log"), "");
+    expect(runOmt(sb, ["hub", "start"], { timeoutMs: 120_000 }).code).toBe(0);
+    const started = newSessions(sb);
+    expect(started.some((l) => l.includes(" -s omt-router "))).toBe(true);
+    expect(started.some((l) => l.includes(" -s omt-hub "))).toBe(true);
+    runOmt(sb, ["hub", "stop"]);
+  }, 400_000);
+
+  test("T19d2 an injection in hubModel never runs", () => {
+    const sb = modelHub(INJECTION);
+    // claude exits at once, so anything pasted after it on the pane line would run
+    writeFileSync(path.join(sb.root, "claude-fail"), "");
+    writeFileSync(path.join(sb.log, "tmux.log"), "");
+    const r = runOmt(sb, ["hub", "start"], { timeoutMs: 180_000 });
+    expect({ pwned: findPwned(sb.root) }).toEqual({ pwned: [] });
+    expect(r.code).toBe(3);
+    expect(r.stderr).toContain(MODEL_REFUSED);
+    expect(newSessions(sb)).toEqual([]);
+    runOmt(sb, ["hub", "stop"]);
+  }, 300_000);
+
+  test("T19d3 a bad registry model skips only that session and never runs it", () => {
+    const sb = modelHub(ABSENT);
+    expect(runOmt(sb, ["hub", "start"], { timeoutMs: 120_000 }).code).toBe(0);
+    expectRegistered(sb, "first start");
+    for (const name of ["proj", "proj2"]) {
+      expect(runOmt(sb, ["hub", "add", project(sb, name)], { timeoutMs: 120_000 }).code).toBe(0);
+    }
+    expect(runOmt(sb, ["hub", "stop"]).code).toBe(0);
+    setRegistryModels(sb, { proj: INJECTION, proj2: "claude-opus-5-5" });
+    writeFileSync(path.join(sb.root, "claude-fail-proj"), "");
+    clearArgv(sb, "proj", "proj2");
+    const r = runOmt(sb, ["hub", "start"], { timeoutMs: 180_000 });
+    expect({ pwned: findPwned(sb.root) }).toEqual({ pwned: [] });
+    expect(r.code).toBe(0);
+    const out = r.stdout + r.stderr;
+    expect(out).toContain("Skipping proj: its registry model isn't a model id");
+    expect(out.includes("touch PWNED")).toBe(false);
+    expect(testSocketHas(sb, "omt-proj")).toBe(false);
+    expectModel("proj2 restore", launched(sb, "proj2", true), "claude-opus-5-5");
+    runOmt(sb, ["hub", "stop"]);
+  }, 400_000);
+
+  test("T19d4 a hub-config.json that isn't a JSON object is refused before anything starts", () => {
+    // record mode: tmux, curl and bun are fakes that log their calls
+    const sb = box({ mode: "record", fleetConfig: FLEET_CONFIG });
+    writeProfilePorts(sb);
+    writeProfileConfig(sb);
+    mkdirSync(path.join(sb.omtHome, "hub"), { recursive: true });
+    trust(sb, path.join(sb.omtHome, "hub"));
+    const cfg = path.join(sb.omtHome, "hub-config.json");
+    const good = readFileSync(cfg, "utf-8");
+    // The credential check reads a falsy config as {}, so only the model check stops these.
+    for (const bad of ["null", "[]", "0"]) {
+      writeFileSync(cfg, bad);
+      writeFileSync(path.join(sb.log, "tmux.log"), "");
+      const r = runOmt(sb, ["hub", "start"], { timeoutMs: 60_000 });
+      expect({ bad, code: r.code }).toEqual({ bad, code: 3 });
+      expect({ bad, refused: r.stderr.includes("can't be read as a JSON object") }).toEqual({ bad, refused: true });
+      expect({ bad, started: newSessions(sb) }).toEqual({ bad, started: [] });
+    }
+    // presence control: the same sandbox with its object config starts both sessions
+    writeFileSync(cfg, good);
+    writeFileSync(path.join(sb.log, "tmux.log"), "");
+    expect(runOmt(sb, ["hub", "start"], { timeoutMs: 60_000 }).code).toBe(0);
+    const started = newSessions(sb);
+    expect(started.some((l) => l.includes(" -s omt-router "))).toBe(true);
+    expect(started.some((l) => l.includes(" -s omt-hub "))).toBe(true);
+  });
+
+  test("T19e the model check accepts exactly the router's CTX_MODEL_RE", () => {
+    const src = readFileSync(path.join(CHECKOUT, "channel", "router.ts"), "utf-8");
+    const m = src.match(/^const CTX_MODEL_RE = \/(.+)\/;$/m);
+    if (!m) throw new Error("const CTX_MODEL_RE = /…/; not found in channel/router.ts");
+    const re = new RegExp(m[1]);
+    const inputs: string[] = [];
+    for (let c = 1; c <= 0x7f; c++) inputs.push(`a${String.fromCharCode(c)}b`);
+    inputs.push("é", "ß", "ｆ", "😀", "", "a", "a".repeat(99), "a".repeat(100), "a".repeat(101));
+    inputs.push("opus[1m]", "us.anthropic.claude-x:0", "vertex@x", "gw/x", "[", "]", "-x");
+    // /bin/bash explicitly (macOS 3.2, what bin/omt runs under), one argv per input.
+    // Note: LC_ALL=C in valid_model doesn't change these results on macOS, so
+    // this test does not pin it.
+    const script = 'source "$0"; for v in "$@"; do if valid_model "$v"; then echo 1; else echo 0; fi; done';
+    const r = Bun.spawnSync(["/bin/bash", "-c", script, path.join(CHECKOUT, "bin", "omt-profile.sh"), ...inputs], {
+      env: { PATH: "/usr/bin:/bin", LANG: "en_US.UTF-8" },
+    });
+    expect(r.exitCode).toBe(0);
+    const got = r.stdout.toString().trim().split("\n");
+    expect(got.length).toBe(inputs.length);
+    const mismatches = inputs.filter((v, i) => (got[i] === "1") !== re.test(v)).map((v) => JSON.stringify(v));
+    expect(mismatches).toEqual([]);
+    // presence: both answers occur
+    expect(got.filter((g) => g === "1").length).toBeGreaterThan(0);
+    expect(got.filter((g) => g === "0").length).toBeGreaterThan(0);
+  });
+
+  test("T19f-tg telegram hub init writes fable into a new or key-less config and keeps an existing hubModel, null included", () => {
+    const sb = box({ mode: "record", fleetConfig: FLEET_CONFIG });
+    const cfg = path.join(sb.omtHome, "hub-config.json");
+    const creds = { botToken: "222222:OMTV-BBBB", chatId: "-2002" };
+    const init = () => runOmt(sb, ["hub", "init", "--telegram", "--token", creds.botToken, "--chat-id", creds.chatId]).code;
+    const read = () => JSON.parse(readFileSync(cfg, "utf-8"));
+
+    expect(init()).toBe(0);
+    expect(read()).toEqual({ platform: "telegram", credentials: creds, hubModel: "fable" });
+    expect((statSync(cfg).mode & 0o777).toString(8)).toBe("600");
+
+    writeFileSync(cfg, JSON.stringify({ platform: "telegram", credentials: creds }));
+    expect(init()).toBe(0);
+    expect({ step: "key-less", hubModel: read().hubModel }).toEqual({ step: "key-less", hubModel: "fable" });
+
+    for (const kept of ["claude-opus-5-5", null]) {
+      writeFileSync(cfg, JSON.stringify({ platform: "telegram", credentials: creds, hubModel: kept }));
+      expect(init()).toBe(0);
+      expect(read()).toEqual({ platform: "telegram", credentials: creds, hubModel: kept });
+    }
+  });
+
+  test("T19f-slack slack hub init keeps an existing hubModel and writes fable into a new config", () => {
+    const sb = box({ mode: "record", fleetConfig: FLEET_CONFIG });
+    const cfg = path.join(sb.omtHome, "hub-config.json");
+    const creds = { botToken: "xoxb-mine", appToken: "xapp-mine", channelId: "C1" };
+    const init = () =>
+      runOmt(sb, ["hub", "init", "--slack", "--token", creds.botToken, "--app-token", creds.appToken, "--channel-id", creds.channelId], { stdin: "\n" }).code;
+    const read = () => JSON.parse(readFileSync(cfg, "utf-8"));
+
+    expect(init()).toBe(0);
+    expect(read()).toEqual({ platform: "slack", credentials: creds, hubModel: "fable" });
+
+    writeFileSync(cfg, JSON.stringify({ platform: "slack", credentials: creds, hubModel: "x" }));
+    expect(init()).toBe(0);
+    expect(read()).toEqual({ platform: "slack", credentials: creds, hubModel: "x" });
+  });
+});

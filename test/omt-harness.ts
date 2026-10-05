@@ -166,6 +166,9 @@ case "$url" in
   */getMe) echo '{"ok":true,"result":{"username":"recordbot"}}' ;;
   */getChat*) echo '{"ok":true,"result":{"title":"Record Group"}}' ;;
   */getUpdates*) echo '{"ok":true,"result":[]}' ;;
+  */apps.connections.open) echo '{"ok":true,"url":"wss://record.invalid"}' ;;
+  */auth.test) echo '{"ok":true,"user":"recordbot"}' ;;
+  */conversations.info*) echo '{"ok":true,"channel":{"name":"record"}}' ;;
   */health) echo '{"status":"ok","platform":"telegram","sessions":0}' ;;
   */sessions)
     # A test can make every registration fail.
@@ -197,8 +200,10 @@ exit 0
     path.join(sb.shim, "claude"),
     `#!/bin/bash
 out=${sh(sb.root)}/claude-\${SESSION_NAME:-none}.txt
-# A test can make this claude die at once (like a real claude refusing to start).
+# A test can make this claude die at once (like a real claude refusing to
+# start): every session with claude-fail, one session with claude-fail-<name>.
 [ -f ${sh(sb.root)}/claude-fail ] && exit 1
+[ -f ${sh(sb.root)}/claude-fail-\${SESSION_NAME:-none} ] && exit 1
 { echo "ARGV $*"; env | sort; echo "OMT_ON_PATH $(command -v omt)"; } > "$out"
 plugin=""; prev=""
 for a in "$@"; do [ "$prev" = "--plugin-dir" ] && plugin="$a"; prev="$a"; done
@@ -382,11 +387,17 @@ export function freePort(): number {
 
 /** Three distinct free ports written to the profile's profile.env. */
 export function writeProfilePorts(sb: Sandbox): { router: number; hub: number; base: number } {
-  const router = freePort();
-  let hub = freePort();
-  while (hub === router) hub = freePort();
-  let base = freePort();
-  while (base === router || base === hub || base > 65000) base = freePort();
+  // profile_guard_ports refuses a port above 65435, and macOS hands out
+  // ephemeral ports in sequence, so a pick near the top fails every command
+  // of the sandbox (exit 3) in bursts. Keep all three at or below 65000.
+  const pick = (taken: number[]) => {
+    let p = freePort();
+    while (taken.includes(p) || p > 65000) p = freePort();
+    return p;
+  };
+  const router = pick([]);
+  const hub = pick([router]);
+  const base = pick([router, hub]);
   mkdirSync(sb.omtHome, { recursive: true });
   writeFileSync(
     path.join(sb.omtHome, "profile.env"),

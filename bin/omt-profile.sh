@@ -28,6 +28,22 @@ port_in_band() { [ "$1" -ge 8800 ] && [ "$1" -le 8899 ]; }
 # Session names and project paths go into pane commands and file names.
 valid_name() { [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]]; }
 safe_path() { case "$1" in *"'"*|*$'\n'*) return 1 ;; esac; return 0; }
+# Model ids go into pane commands too. valid_model accepts exactly the set of
+# the router's CTX_MODEL_RE (channel/router.ts); T19e sweeps the two against
+# each other. LC_ALL=C keeps A-Z ASCII-only on systems whose locale ranges
+# differ; on macOS bash 3.2 the result is the same without it.
+valid_model() { local LC_ALL=C re='^[][A-Za-z0-9._:@/-]{1,100}$'; [[ $1 =~ $re ]]; }
+# model_from_json RAW: RAW is a value printed by python's json.dumps, or "-"
+# or "" for no key. Prints the model (nothing for none) and returns 0, or
+# returns 1 when RAW isn't a JSON string holding a valid model id. A JSON
+# escape always brings a backslash, which valid_model refuses.
+model_from_json() {
+    case "$1" in
+        ""|-|null|'""') return 0 ;;
+        \"*\") local v="${1#\"}"; v="${v%\"}"; valid_model "$v" || return 1; printf '%s' "$v" ;;
+        *) return 1 ;;
+    esac
+}
 # Without lsof every port looks free: refuse rather than guess.
 need_lsof() { command -v lsof >/dev/null 2>&1 || { _gfail "lsof not found, so ports in use can't be checked"; return 3; }; }
 port_listening() { lsof -nP -iTCP:"$1" -sTCP:LISTEN -t >/dev/null 2>&1; }
@@ -440,11 +456,80 @@ os.chmod(out, 0o600)
 PY
 }
 
-# session_cmd NAME CWD PORT AGENT CONT → the pane command for a session.
+# ── Models (WO-025, fork #22) ────────────────────────────────────────────
+# The hub's model is hubModel in this profile's hub-config.json; a project
+# session's is the `model` of its registry entry. Nothing here reads or
+# writes ~/.claude/settings.json.
+
+# _hub_model_raw: prints json.dumps(hubModel), or nothing when the key is
+# absent. Returns 1 when the config can't be read as a JSON object.
+_hub_model_raw() {
+    OMT_M_FILE="$CONFIG_PATH" python3 - <<'PY'
+import json, os, sys
+try:
+    with open(os.environ["OMT_M_FILE"]) as f:
+        d = json.load(f)
+    if not isinstance(d, dict):
+        raise ValueError("not an object")
+    if "hubModel" in d:
+        print(json.dumps(d["hubModel"]))
+except Exception:
+    sys.exit(1)
+PY
+}
+
+# hub init (profile mode) rewrites hub-config.json with `cat >`, which would
+# drop hubModel. The snapshot, taken before, holds the old value's JSON, or
+# is empty when the old config had no key or couldn't be read (absent and
+# null differ: null is the opt-out). keep, run after the write, puts the
+# value back, or writes "fable" when there was none.
+profile_hub_model_snapshot() {
+    _HUB_MODEL_SNAP=$(_hub_model_raw) || _HUB_MODEL_SNAP=""
+}
+
+profile_hub_model_keep() {
+    if ! _hub_model_keep; then
+        echo -e "${RED}omt: hubModel could not be set in $CONFIG_PATH; set it by hand (docs/omtv.md, Model).${RESET}" >&2
+        return 3
+    fi
+}
+
+# On failure it prints only the error's type and message (a JSON error names
+# a line and column, a decode error at most one byte), so the token in the
+# file isn't shown.
+_hub_model_keep() {
+    OMT_M_FILE="$CONFIG_PATH" OMT_M_SNAP="${_HUB_MODEL_SNAP:-}" python3 - <<'PY'
+import json, os, sys, tempfile
+try:
+    p = os.environ["OMT_M_FILE"]
+    snap = os.environ.get("OMT_M_SNAP", "")
+    with open(p) as f:
+        d = json.load(f)
+    d["hubModel"] = json.loads(snap) if snap else "fable"
+    fd, t = tempfile.mkstemp(dir=os.path.dirname(p), prefix=".hub-config.")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(d, indent=2, allow_nan=False) + "\n")
+        os.chmod(t, 0o600)
+        os.replace(t, p)
+    except BaseException:
+        os.unlink(t)
+        raise
+except Exception as e:
+    print(f"omt: {type(e).__name__}: {e}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+# session_cmd NAME CWD PORT AGENT CONT [MODEL] → the pane command for a
+# session. MODEL must already have passed valid_model. The tmux argument is a
+# bash double-quoted string; the single quotes around MODEL are for the pane
+# shell, so a bracketed id like opus[1m] is never globbed.
 session_cmd() {
-    local name="$1" cwd="$2" port="$3" agent="$4" cont="$5" settings=""
+    local name="$1" cwd="$2" port="$3" agent="$4" cont="$5" smodel="${6:-}" settings="" mflag=""
     [ -f "$OMT_DIR/settings.json" ] && settings="--settings '$OMT_DIR/settings.json' "
-    printf '%s' "cd '$cwd' && OMT_HUB_DIR='$OMT_DIR' BRIDGE_PORT=$port ROUTER_URL=http://localhost:$ROUTER_PORT ROUTER_PORT=$ROUTER_PORT SESSION_NAME=$name OMT_PLUGIN_DIR='$PLUGIN_DIR' claude --plugin-dir '$PLUGIN_ARG' --agent $agent --dangerously-skip-permissions --setting-sources project,local ${settings}--strict-mcp-config --mcp-config '$OMT_DIR/mcp/$name.json' --dangerously-load-development-channels server:$MCP_NAME $cont; rc=\$?; echo \"\$(date -u +%FT%TZ) $name: claude exited \$rc\" >> '$OMT_DIR/sessions.log'; echo 'Session ended. Press any key...'; read -n1"
+    [ -n "$smodel" ] && mflag="--model '$smodel' "
+    printf '%s' "cd '$cwd' && OMT_HUB_DIR='$OMT_DIR' BRIDGE_PORT=$port ROUTER_URL=http://localhost:$ROUTER_PORT ROUTER_PORT=$ROUTER_PORT SESSION_NAME=$name OMT_PLUGIN_DIR='$PLUGIN_DIR' claude --plugin-dir '$PLUGIN_ARG' --agent $agent ${mflag}--dangerously-skip-permissions --setting-sources project,local ${settings}--strict-mcp-config --mcp-config '$OMT_DIR/mcp/$name.json' --dangerously-load-development-channels server:$MCP_NAME $cont; rc=\$?; echo \"\$(date -u +%FT%TZ) $name: claude exited \$rc\" >> '$OMT_DIR/sessions.log'; echo 'Session ended. Press any key...'; read -n1"
 }
 
 # Wait for a bridge's /health, nudging first-run prompts with Enter.
@@ -474,6 +559,15 @@ profile_hub_start() {
     profile_guard || return $?
     require_bun
     require_config
+    # The hub's model: hubModel only, checked before anything starts. The
+    # raw value is never printed (it may hold a payload or terminal escapes).
+    local hub_model hub_model_raw
+    if ! hub_model_raw=$(_hub_model_raw); then
+        _gfail "$CONFIG_PATH can't be read as a JSON object"; return 3
+    fi
+    if ! hub_model=$(model_from_json "$hub_model_raw"); then
+        _gfail "$CONFIG_PATH: hubModel isn't a model id (letters, digits, . _ : @ / [ ] -, 1-100 chars)"; return 3
+    fi
     profile_guard_creds || return 3
     profile_guard_inuse || return 3
 
@@ -531,7 +625,7 @@ profile_hub_start() {
         echo "$BRIDGE_PORT_BASE" > "$NEXT_BRIDGE_PORT_FILE"
         write_session_mcp hub || return 3
         omt_tmux new-session -d -s omt-hub \
-            "$(session_cmd hub "$HUB_CWD" "$HUB_BRIDGE_PORT" hub "$CONTINUE_FLAG")"
+            "$(session_cmd hub "$HUB_CWD" "$HUB_BRIDGE_PORT" hub "$CONTINUE_FLAG" "$hub_model")"
         sleep 3
         omt_tmux send-keys -t "$(tgt_pane omt-hub)" Enter 2>/dev/null
         sleep 2
@@ -586,7 +680,13 @@ try:
             continue
         p = info.get("path", "")
         if p and os.path.isdir(p):
-            print(f"{name}\t{p}")
+            # The path goes last so a tab in it stays in it; "-" (never JSON)
+            # marks no model, so an empty column never shifts the others.
+            # (read still trims a tab at either end of the path, and an empty
+            # name or one holding a tab shifts the columns; every column is
+            # still checked.)
+            m = json.dumps(info["model"]) if "model" in info else "-"
+            print(f"{name}\t{m}\t{p}")
 except Exception as e:
     print(f"Error reading registry: {e}", file=sys.stderr)
 ' 2>/dev/null)
@@ -594,10 +694,14 @@ except Exception as e:
 
     echo ""
     echo -e "${CYAN}Restoring previous sessions...${RESET}"
-    local name proj_path PORT
-    while IFS=$'\t' read -r name proj_path; do
+    local name rawmodel proj_path PORT model
+    while IFS=$'\t' read -r name rawmodel proj_path; do
         if ! valid_name "$name" || ! safe_path "$proj_path"; then
             echo -e "  ${YELLOW}Skipping a registry entry with an unsafe name or path.${RESET}" >&2
+            continue
+        fi
+        if ! model=$(model_from_json "$rawmodel"); then
+            echo -e "  ${YELLOW}Skipping $name: its registry model isn't a model id.${RESET}" >&2
             continue
         fi
         echo -e "  ${DIM}Restoring $name ($proj_path)...${RESET}"
@@ -609,7 +713,7 @@ except Exception as e:
         PORT=$(alloc_port) || continue
         write_session_mcp "$name" || continue
         omt_tmux new-session -d -s "omt-$name" \
-            "$(session_cmd "$name" "$proj_path" "$PORT" sisyphus --continue)"
+            "$(session_cmd "$name" "$proj_path" "$PORT" sisyphus --continue "$model")"
         sleep 2
         omt_tmux send-keys -t "$(tgt_pane "omt-$name")" Enter 2>/dev/null
         sleep 1
@@ -866,5 +970,5 @@ profile_print_env() {
              FLEET_DIR CLAUDE_JSON; do
         echo "$v=${!v}"
     done
-    echo "SESSION_CMD=$(session_cmd sample /p 1234 sisyphus "")"
+    echo "SESSION_CMD=$(session_cmd sample /p 1234 sisyphus "" sample-model)"
 }

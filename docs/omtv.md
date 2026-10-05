@@ -150,8 +150,34 @@ Known limits:
   `{"env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"}}` (user settings
   aren't read).
 - Don't run `/model` in an omtv session: Claude Code saves the choice to the
-  shared `~/.claude/settings.json` (fork issue #17). Start the session with
-  the model you want instead.
+  shared `~/.claude/settings.json` (fork issue #17). Set `hubModel` or a
+  registry `model` instead (see Model, below).
+
+## Model
+
+- **The hub:** `hubModel` in `~/.omtv/hub-config.json`, for example
+  `"hubModel": "fable"`. `hub start` launches the hub with `--model <value>`.
+  `hub init` writes `"fable"` into a new config, adds it to a config that has
+  no `hubModel`, and keeps any value already there. Absent, `null` or `""`
+  means no flag, and the hub then runs the model in `agents/hub.md` (sonnet).
+  `null` is the lasting opt-out, because init keeps it. Init rewrites the
+  file: it ends up mode 600, a symlinked config is replaced by a regular
+  file, and a config init can't parse counts as having no `hubModel`, so it
+  gets `fable`.
+- To set it on an existing profile, edit the file with the hub stopped (it
+  holds the bot token, so keep it mode 600), or re-run `hub init`. A change
+  applies at the next `hub stop && hub start`; a running hub is left alone.
+- **A project session:** the `model` field of its entry in
+  `~/.omtv/hub-registry.json`, read when `hub start` restores the session.
+  Set it with the hub stopped: the router loads the registry once and saves
+  it from memory. `hub add` sets none, and `hub stop --clean` and
+  `hub remove` drop the entry with its `model`. The hub's own registry entry
+  is never read for a model.
+- Values may use letters, digits, `.`, `_`, `:`, `@`, `/`, `[`, `]` and `-`,
+  1-100 characters (the router's rule for reported models). An id Claude
+  Code doesn't know is passed through; claude then reports the error.
+- `model` in `~/.omtv/settings.json` is not the way: it also reaches
+  interactive omtv runs, and every session gets it through `--settings`.
 
 ## Guards
 
@@ -172,6 +198,13 @@ anything or creates anything. It refuses to run (exit 3) when:
   equals the default hub's, or the default hub's `hub-config.json` exists but
   can't be read. The comparison runs in-process and never prints the values.
   `hub init` checks before its first Telegram or Slack call.
+
+`hub start` also refuses (exit 3), before it starts anything, when
+`hubModel` isn't a model id (see Model). It checks this even when the hub
+is already running, so a bad value also blocks a `hub start` run only to
+bring back crashed project sessions. The message never prints the value. A
+project session whose registry `model` isn't a model id is skipped, and the
+others still start.
 
 The profile dir is made owner-only (mode 700): it holds the bot token. In
 profile mode, project dir names may use letters, digits, `.`, `-`, `_` and

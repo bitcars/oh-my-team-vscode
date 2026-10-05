@@ -43,6 +43,8 @@ interface Mutant {
   patches: [find: string, replace: string][];
   mustFail: string[];
   mustPass: string[];
+  /** title → text that bun's printed error for that (mustFail) test must contain */
+  mustFailWith?: Record<string, string>;
 }
 
 const T1F = "T1 old and new bin/omt make identical calls and writes (fleet agents dir: false)";
@@ -97,6 +99,17 @@ const GUARD_BLOCK = `if (process.env.OMT_PROFILE === "1") {
 }
 `;
 const ADAPTER_LINE = "const adapter = await loadAdapter(config.platform);\n";
+
+const T19A = "T19a hubModel launches the hub with --model on the first start and on --continue; project sessions get none, after add and after restore";
+const T19B = "T19b without hubModel, or with it null or \"\", no session gets --model; the registry's hub model is ignored; user-level settings are never used or written";
+const T19C = "T19c start and restore pass each model verbatim and quoted; a model-less row gets none; the hub ignores the registry";
+const T19D1 = "T19d1 a hubModel outside the allowed set is refused before anything starts, without printing it";
+const T19D2 = "T19d2 an injection in hubModel never runs";
+const T19D3 = "T19d3 a bad registry model skips only that session and never runs it";
+const T19D4 = "T19d4 a hub-config.json that isn't a JSON object is refused before anything starts";
+const T19E = "T19e the model check accepts exactly the router's CTX_MODEL_RE";
+const T19FTG = "T19f-tg telegram hub init writes fable into a new or key-less config and keeps an existing hubModel, null included";
+const T19FSLACK = "T19f-slack slack hub init keeps an existing hubModel and writes fable into a new config";
 
 const P = "bin/omt-profile.sh";
 const MUTANTS: Mutant[] = [
@@ -261,7 +274,7 @@ const MUTANTS: Mutant[] = [
   {
     name: "restore-launch-default-string: restore launches with the default-hub command",
     file: P, suite: PROFILE,
-    patches: [['            "$(session_cmd "$name" "$proj_path" "$PORT" sisyphus --continue)"', `            "cd '$proj_path' && BRIDGE_PORT=$PORT ROUTER_URL=http://localhost:$ROUTER_PORT SESSION_NAME=$name OMT_PLUGIN_DIR='$PLUGIN_DIR' claude --plugin-dir '$PLUGIN_DIR' --agent sisyphus --dangerously-skip-permissions --dangerously-load-development-channels server:omt-bridge --continue"`]],
+    patches: [['            "$(session_cmd "$name" "$proj_path" "$PORT" sisyphus --continue "$model")"', `            "cd '$proj_path' && BRIDGE_PORT=$PORT ROUTER_URL=http://localhost:$ROUTER_PORT SESSION_NAME=$name OMT_PLUGIN_DIR='$PLUGIN_DIR' claude --plugin-dir '$PLUGIN_DIR' --agent sisyphus --dangerously-skip-permissions --dangerously-load-development-channels server:omt-bridge --continue"`]],
     mustFail: [T8], mustPass: [T6],
   },
   // ── T9: trust ──
@@ -525,6 +538,122 @@ const MUTANTS: Mutant[] = [
     patches: [["need_lsof() { command -v lsof >/dev/null 2>&1 || { _gfail \"lsof not found, so ports in use can't be checked\"; return 3; }; }", "need_lsof() { return 0; }"]],
     mustFail: [T4LSOF], mustPass: [T4PORTS],
   },
+  // ── T19: the hub's model (WO-025, fork #22) ──
+  {
+    name: "model-flag-dropped: session_cmd ignores the model",
+    file: P, suite: PROFILE,
+    patches: [["[ -n \"$smodel\" ] && mflag=\"--model '$smodel' \"", "[ -n \"$smodel\" ] && mflag=\"\""]],
+    mustFail: [T19A, T19C], mustPass: [T19B],
+  },
+  {
+    name: "model-flag-only-fresh: the model is dropped when the session resumes (--continue)",
+    file: P, suite: PROFILE,
+    patches: [["[ -n \"$smodel\" ] && mflag=\"--model '$smodel' \"", "[ -n \"$smodel\" ] && [ -z \"$cont\" ] && mflag=\"--model '$smodel' \""]],
+    mustFail: [T19A, T19C], mustPass: [T19B],
+  },
+  {
+    name: "model-from-user-settings: the hub's model comes from ~/.claude/settings.json",
+    file: P, suite: PROFILE,
+    patches: [["    if ! hub_model=$(model_from_json \"$hub_model_raw\"); then", "    _u=$(python3 -c 'import json,os; m=json.load(open(os.path.expanduser(\"~/.claude/settings.json\"))).get(\"model\"); print(json.dumps(m) if m else \"\")' 2>/dev/null); [ -n \"$_u\" ] && hub_model_raw=$_u\n    if ! hub_model=$(model_from_json \"$hub_model_raw\"); then"]],
+    mustFail: [T19B], mustPass: [T19A],
+  },
+  {
+    name: "user-settings-written: hub start writes ~/.claude/settings.json",
+    file: P, suite: PROFILE,
+    patches: [["    if ! hub_model=$(model_from_json \"$hub_model_raw\"); then", "    case \"$HOME\" in /tmp/*|/private/tmp/*|/private/var/folders/*) mkdir -p \"$HOME/.claude\"; echo '{}' >> \"$HOME/.claude/settings.json\" ;; esac\n    if ! hub_model=$(model_from_json \"$hub_model_raw\"); then"]],
+    mustFail: [T19B], mustPass: [T19A],
+  },
+  {
+    name: "hub-model-everywhere: add and restore pass the hub's model",
+    file: P, suite: PROFILE,
+    patches: [["--continue \"$model\")\"", "--continue \"$(model_from_json \"$(_hub_model_raw)\")\")\""], ["        \"$(session_cmd \"$NAME\" \"$PROJECT_DIR\" \"$PORT\" sisyphus \"$CONTINUE_FLAG\")\"", "        \"$(session_cmd \"$NAME\" \"$PROJECT_DIR\" \"$PORT\" sisyphus \"$CONTINUE_FLAG\" \"$(model_from_json \"$(_hub_model_raw)\")\")\""]],
+    mustFail: [T19A], mustPass: [T19B],
+  },
+  {
+    name: "model-unquoted: the pane shell sees a bare --model value",
+    file: P, suite: PROFILE,
+    patches: [["[ -n \"$smodel\" ] && mflag=\"--model '$smodel' \"", "[ -n \"$smodel\" ] && mflag=\"--model $smodel \""]],
+    mustFail: [T19C], mustPass: [T19A],
+  },
+  {
+    name: "model-unvalidated: any model id passes",
+    file: P, suite: PROFILE,
+    patches: [["valid_model() { local LC_ALL=C re='^[][A-Za-z0-9._:@/-]{1,100}$'; [[ $1 =~ $re ]]; }", "valid_model() { return 0; }"]],
+    mustFail: [T19D1, T19D2, T19D3, T19E], mustPass: [T19A],
+    mustFailWith: { [T19D2]: "/PWNED\"", [T19D3]: "/PWNED\"" },
+  },
+  {
+    name: "restore-ignores-model: restore passes no registry model",
+    file: P, suite: PROFILE,
+    patches: [["--continue \"$model\")\"", "--continue)\""]],
+    mustFail: [T19C], mustPass: [T19A],
+  },
+  {
+    name: "restore-model-leaks: a row without a model keeps the previous row's",
+    file: P, suite: PROFILE,
+    patches: [["        if ! model=$(model_from_json \"$rawmodel\"); then", "        if ! m2=$(model_from_json \"$rawmodel\"); then"], ["        echo -e \"  ${DIM}Restoring $name ($proj_path)...${RESET}\"", "        [ -n \"$m2\" ] && model=$m2\n        echo -e \"  ${DIM}Restoring $name ($proj_path)...${RESET}\""]],
+    mustFail: [T19C], mustPass: [T19A],
+  },
+  {
+    name: "hub-takes-registry-model: the hub prefers the registry's hub model",
+    file: P, suite: PROFILE,
+    patches: [["    if ! hub_model=$(model_from_json \"$hub_model_raw\"); then", "    _r=$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1]))[\"sessions\"][\"hub\"].get(\"model\"); print(json.dumps(m) if m else \"\")' \"$OMT_DIR/hub-registry.json\" 2>/dev/null); [ -n \"$_r\" ] && hub_model_raw=$_r\n    if ! hub_model=$(model_from_json \"$hub_model_raw\"); then"]],
+    mustFail: [T19B, T19C], mustPass: [T19A],
+  },
+  {
+    name: "null-becomes-model: a JSON null launches --model null",
+    file: P, suite: PROFILE,
+    patches: [["        \"\"|-|null|'\"\"') return 0 ;;", "        \"\"|-|'\"\"') return 0 ;;\n        null) printf '%s' null ;;"]],
+    mustFail: [T19B], mustPass: [T19A],
+  },
+  {
+    name: "bare-scalar-accepted: a bare JSON number passes as a model",
+    file: P, suite: PROFILE,
+    patches: [["printf '%s' \"$v\" ;;\n        *) return 1 ;;", "printf '%s' \"$v\" ;;\n        *) valid_model \"$1\" || return 1; printf '%s' \"$1\" ;;"]],
+    mustFail: [T19D1], mustPass: [T19A],
+  },
+  {
+    name: "init-keep-dropped-tg: telegram init drops hubModel",
+    file: "bin/omt", suite: PROFILE,
+    patches: [["    \"chatId\": \"$CHAT_ID\"\n  }\n}\nEOF\n        if [ -n \"$OMT_PROFILE\" ]; then profile_hub_model_keep || exit 3; fi\n", "    \"chatId\": \"$CHAT_ID\"\n  }\n}\nEOF\n"]],
+    mustFail: [T19FTG], mustPass: [T19FSLACK],
+  },
+  {
+    name: "init-keep-dropped-slack: slack init drops hubModel",
+    file: "bin/omt", suite: PROFILE,
+    patches: [["    \"channelId\": \"$CHAT_ID\"\n  }\n}\nEOF\n        if [ -n \"$OMT_PROFILE\" ]; then profile_hub_model_keep || exit 3; fi\n", "    \"channelId\": \"$CHAT_ID\"\n  }\n}\nEOF\n"]],
+    mustFail: [T19FSLACK], mustPass: [T19FTG],
+  },
+  {
+    name: "snapshot-get: init's snapshot reads an absent hubModel as null",
+    file: P, suite: PROFILE,
+    patches: [["    if \"hubModel\" in d:\n        print(json.dumps(d[\"hubModel\"]))\n", "    print(json.dumps(d.get(\"hubModel\")))\n"]],
+    mustFail: [T19FTG], mustPass: [T19FSLACK],
+  },
+  {
+    name: "model-check-after-router: hubModel is checked only after the router has started",
+    file: P, suite: PROFILE,
+    patches: [["    # The hub's model: hubModel only, checked before anything starts. The\n    # raw value is never printed (it may hold a payload or terminal escapes).\n    local hub_model hub_model_raw\n    if ! hub_model_raw=$(_hub_model_raw); then\n        _gfail \"$CONFIG_PATH can't be read as a JSON object\"; return 3\n    fi\n    if ! hub_model=$(model_from_json \"$hub_model_raw\"); then\n        _gfail \"$CONFIG_PATH: hubModel isn't a model id (letters, digits, . _ : @ / [ ] -, 1-100 chars)\"; return 3\n    fi\n", ""], ["    # Hub session: runs in $OMT_DIR/hub, never $HOME.\n", "    # The hub's model: hubModel only, checked before anything starts. The\n    # raw value is never printed (it may hold a payload or terminal escapes).\n    local hub_model hub_model_raw\n    if ! hub_model_raw=$(_hub_model_raw); then\n        _gfail \"$CONFIG_PATH can't be read as a JSON object\"; return 3\n    fi\n    if ! hub_model=$(model_from_json \"$hub_model_raw\"); then\n        _gfail \"$CONFIG_PATH: hubModel isn't a model id (letters, digits, . _ : @ / [ ] -, 1-100 chars)\"; return 3\n    fi\n    # Hub session: runs in $OMT_DIR/hub, never $HOME.\n"]],
+    mustFail: [T19D1], mustPass: [T19A],
+  },
+  {
+    name: "refusal-prints-value: the hubModel refusal echoes the raw value",
+    file: P, suite: PROFILE,
+    patches: [["_gfail \"$CONFIG_PATH: hubModel isn't a model id (letters, digits, . _ : @ / [ ] -, 1-100 chars)\"; return 3", "_gfail \"$CONFIG_PATH: hubModel isn't a model id (letters, digits, . _ : @ / [ ] -, 1-100 chars): $hub_model_raw\"; return 3"]],
+    mustFail: [T19D1], mustPass: [T19A],
+  },
+  {
+    name: "skip-prints-model: the restore skip message echoes the raw registry model",
+    file: P, suite: PROFILE,
+    patches: [["echo -e \"  ${YELLOW}Skipping $name: its registry model isn't a model id.${RESET}\" >&2", "echo -e \"  ${YELLOW}Skipping $name: its registry model isn't a model id: $rawmodel.${RESET}\" >&2"]],
+    mustFail: [T19D3], mustPass: [T19A],
+  },
+  {
+    name: "non-object-config-accepted: a hub-config.json that isn't a JSON object passes the model check",
+    file: P, suite: PROFILE,
+    patches: [["    if ! hub_model_raw=$(_hub_model_raw); then", "    if ! hub_model_raw=$(_hub_model_raw) && false; then"]],
+    mustFail: [T19D4], mustPass: [T19A],
+  },
 ];
 
 // ── Runner ────────────────────────────────────────────────────────────────
@@ -543,6 +672,25 @@ function unescapeXml(s: string): string {
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The error bun printed for a failed test. bun 1.3 prints no "(pass)" lines
+ * when not on a TTY, so the window runs from the previous "(fail)" line (or
+ * the start of the output) to "(fail) <title>", and starts at bun's source
+ * excerpt ("123 | ...") so stray output of a passing test in between isn't
+ * counted. The JUnit report has no failure message, hence the console.
+ */
+function failureText(output: string, title: string): string | null {
+  const lines = output.split("\n");
+  const end = lines.findIndex((l) => l.startsWith("(fail) ") && (l.startsWith(`(fail) ${title} [`) || l.includes(` > ${title} [`)));
+  if (end < 0) return null;
+  let start = end - 1;
+  while (start >= 0 && !/^\((fail|pass|skip|todo)\) /.test(lines[start])) start--;
+  let from = start + 1;
+  const excerpt = lines.findIndex((l, i) => i >= from && i < end && /^\s*\d+ \| /.test(l));
+  if (excerpt >= 0) from = excerpt;
+  return lines.slice(from, end).join("\n");
 }
 
 let copyN = 0;
@@ -624,14 +772,22 @@ describe("profile-mode removal control", () => {
       const b = baseline.get(m.suite);
       expect(b).toBeDefined();
       for (const t of [...m.mustFail, ...m.mustPass]) expect({ mutant: m.name, title: t, known: b!.passed.includes(t) }).toEqual({ mutant: m.name, title: t, known: true });
+      for (const t of Object.keys(m.mustFailWith ?? {})) expect({ mutant: m.name, title: t, inMustFail: m.mustFail.includes(t) }).toEqual({ mutant: m.name, title: t, inMustFail: true });
     }
   });
 
   for (const m of MUTANTS) {
     test(`mutant caught: ${m.name}`, () => {
       const r = run({ file: m.file, suite: m.suite, patches: m.patches, only: [...m.mustFail, ...m.mustPass] });
+      // The copy's output is otherwise lost: print it when a result is unexpected, so a flake can be diagnosed.
+      const unexpected = [...m.mustFail.filter((t) => !r.failed.includes(t)), ...m.mustPass.filter((t) => !r.passed.includes(t))];
+      if (unexpected.length) console.log(`--- ${m.name}: unexpected result for: ${unexpected.join(" | ")}\n${r.output.slice(-8000)}`);
       for (const t of m.mustFail) expect({ mutant: m.name, test: t, failed: r.failed.includes(t) }).toEqual({ mutant: m.name, test: t, failed: true });
       for (const t of m.mustPass) expect({ mutant: m.name, test: t, passed: r.passed.includes(t) }).toEqual({ mutant: m.name, test: t, passed: true });
+      for (const [t, text] of Object.entries(m.mustFailWith ?? {})) {
+        const shown = failureText(r.output, t)?.includes(text) ?? false;
+        expect({ mutant: m.name, test: t, text, shown }).toEqual({ mutant: m.name, test: t, text, shown: true });
+      }
     });
   }
 });
