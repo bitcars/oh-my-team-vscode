@@ -222,6 +222,7 @@ Skills are slash commands that trigger workflows.
 | `/oh-my-team:git-master` | Atomic commit workflow with logical grouping |
 | `/oh-my-team:ai-slop-remover` | Detect and remove AI-generated code patterns |
 | `/oh-my-team:frontend-ui-ux` | Frontend development guidance (auto-loaded for UI work) |
+| `/oh-my-team:plan-audit` | Headless adversarial auditors attack a plan before any code (the lab hub's audit gate) |
 
 ### Workflow: Plan, Execute, Review
 
@@ -275,7 +276,7 @@ Skills are slash commands that trigger workflows.
 |  Skills     team | deep-debug                     |
 +-------------------------------------------------+
 |  Utility    git-master | ai-slop-remover          |
-|  Skills     frontend-ui-ux                        |
+|  Skills     frontend-ui-ux | plan-audit           |
 +-------------------------------------------------+
 |  Status    Agent name | Team | Members            |
 |  Line      Context bar | Cost | Rate limits       |
@@ -288,7 +289,7 @@ Skills are slash commands that trigger workflows.
 Oh My Team is a Claude Code plugin with a lightweight channel system. The core is pure Markdown (agents + skills), the hub adds a small TypeScript bridge for remote control. It leverages Claude Code's native systems:
 
 - **Agents** (`agents/*.md`) -- 12 specialized agents with model and tool configurations
-- **Skills** (`skills/*/SKILL.md`) -- 8 slash commands that trigger workflows
+- **Skills** (`skills/*/SKILL.md`) -- 9 slash commands that trigger workflows
 - **Channel system** (`channel/`) -- Hub, router, bridge, and platform adapters for remote control
 - **Agent Teams** -- Claude Code's experimental multi-session coordination
 - **Status Line** -- Custom status bar showing active agents and teams
@@ -427,7 +428,7 @@ oh-my-team/
 |   +-- security-auditor.md      # Security review
 |   +-- metis.md                 # Gap analyzer
 |   +-- momus.md                 # Plan reviewer
-+-- skills/                      # 8 slash commands
++-- skills/                      # 9 slash commands
 |   +-- team/SKILL.md            # Force team mode
 |   +-- plan/SKILL.md            # Planning workflow
 |   +-- start-work/SKILL.md      # Execution workflow
@@ -436,6 +437,7 @@ oh-my-team/
 |   +-- git-master/SKILL.md      # Commit workflow (utility)
 |   +-- ai-slop-remover/SKILL.md # Code cleanup (utility)
 |   +-- frontend-ui-ux/SKILL.md  # Frontend guidance (auto-loaded)
+|   +-- plan-audit/SKILL.md      # Plan audit gate (headless auditors)
 +-- channel/                     # Hub channel system
 |   +-- bridge.ts                # MCP channel server (per-session)
 |   +-- router.ts                # Session registry + message broker

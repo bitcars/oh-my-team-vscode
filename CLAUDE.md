@@ -17,6 +17,7 @@ Use `/oh-my-team:team <task>` when the user wants parallel agents working togeth
 | `/oh-my-team:deep-debug` | Multi-hypothesis debugging |
 | `/oh-my-team:git-master` | Atomic commit workflow |
 | `/oh-my-team:ai-slop-remover` | Clean AI-generated code slop |
+| `/oh-my-team:plan-audit` | Headless adversarial plan audit before any code |
 
 ## Available teammate types (used via /team)
 

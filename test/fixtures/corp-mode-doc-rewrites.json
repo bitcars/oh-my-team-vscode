@@ -1,0 +1,416 @@
+[
+  {
+    "id": "r1",
+    "line": 1,
+    "gone": "# Corp mode spec — v2.4\n",
+    "present": "^# Corp mode spec — v2\\.4-lab\\.1 \\(AI\\.Lab copy\\)$"
+  },
+  {
+    "id": "r3",
+    "line": 6,
+    "gone": "Status: v2.4, final for WO-026.",
+    "present": "^AI\\.Lab copy for #25 \\(WO-027\\) of v2\\.4 \\(sha1 214952dc\\)\\. Self-contained: §0a carries the"
+  },
+  {
+    "id": "r13",
+    "line": 13,
+    "gone": "**Sources and cite marks.**",
+    "present": "^\\*\\*Sources and cite marks \\(Corp evidence, not needed to run\\)\\.\\*\\*$"
+  },
+  {
+    "id": "r27",
+    "line": 27,
+    "gone": "On AI.Lab's repo that is `oh-my-team-vscode`,",
+    "present": "^- \\*\\*Team:\\*\\* one project session doing the work\\. On AI\\.Lab, a team is a lab session the lab$"
+  },
+  {
+    "id": "r27-omt-core",
+    "line": 29,
+    "gone": "It scopes; it does not implement",
+    "present": "^  AI\\.Lab has no scoping session of its own \\(§1\\.2\\)\\.$"
+  },
+  {
+    "id": "r31",
+    "line": 31,
+    "gone": "the live fleet: `~/.oh-my-team`, router :8800,",
+    "present": "^- \\*\\*AI\\.Corp \\(\\\"corp\\\"\\):\\*\\* the other hub: :8800-8809, the default tmux server, `~/\\.oh-my-team`,$"
+  },
+  {
+    "id": "r31-lab",
+    "line": 33,
+    "gone": "the second hub on the clean clone: `~/.omtv`, router :9800,",
+    "present": "routers :9800-9804, `tmux -L omtv`, bitcars/oh-my-team-vscode \\(fork base `master`\\)"
+  },
+  {
+    "id": "r37",
+    "line": 37,
+    "gone": "**Order / WO-NNN:**",
+    "present": "^- \\*\\*Order / LWO-NNN:\\*\\* one unit of work with a ledger file\\."
+  },
+  {
+    "id": "r62",
+    "line": 62,
+    "gone": "Where the flow spec is silent, it still applies",
+    "present": "The flow-spec rules that still apply are in §0a; this$"
+  },
+  {
+    "id": "r78",
+    "line": 78,
+    "gone": "(\"Gates\") still binds AI.Corp's hub.",
+    "present": "^\\*\\*On AI\\.Lab the gate rules are `agents/hub\\.md` \\\"Dev flow\\\" \\(its open-gate and stuck-gate line\\)$"
+  },
+  {
+    "id": "r116",
+    "line": 116,
+    "gone": "**Owner:** omt-core, read-only on the target repo.",
+    "present": "^- \\*\\*Owner:\\*\\* a scoping session, read-only on the target repo\\. AI\\.Lab has none of its own\\.$"
+  },
+  {
+    "id": "r116-summary",
+    "line": 136,
+    "gone": "omt-core sends hub a summary by `team_message`.",
+    "present": "^  The scoping session sends hub a summary by `team_message`\\."
+  },
+  {
+    "id": "r178",
+    "line": 178,
+    "gone": "the hub has no Agent tool (`agents/hub.md` tools line).",
+    "present": "The lab hub has the Agent tool \\(its `agents/hub\\.md` has no `tools:` line\\),$"
+  },
+  {
+    "id": "r178-recipe",
+    "line": 180,
+    "gone": "It follows [recipe] instead:",
+    "present": "Follow `skills/plan-audit/SKILL\\.md`\\. In short:$"
+  },
+  {
+    "id": "r178-scratch",
+    "line": 181,
+    "gone": "Copy the plan into a scratch dir `$S`.",
+    "present": "^  1\\. Copy the plan into a fresh dir under `/tmp` \\(`mktemp -d /tmp/plan-audit-<lwo>-r<N>-XXXX`\\),$"
+  },
+  {
+    "id": "r198",
+    "line": 198,
+    "gone": "Real examples: `prompt-correctness.txt` and `prompt-verification.txt` in",
+    "present": "^     The lab templates are in `skills/plan-audit/briefs/` \\(`code\\.md` for a code plan, `doc\\.md`$"
+  },
+  {
+    "id": "r202",
+    "line": 202,
+    "gone": "(claude -p --model opus --dangerously-skip-permissions --output-format text \"$(cat prompt-A.txt)\" > final-A.txt 2> err-A.txt) &",
+    "present": "^     with a 45 min timeout\\. The launcher is `skills/plan-audit/run\\.sh`, the one copy; SKILL\\.md$"
+  },
+  {
+    "id": "r202-launch",
+    "line": 200,
+    "gone": "Launch both in parallel from `$S`:",
+    "present": "^  4\\. Hub records the guard values, then launches each lens as its own background Bash call$"
+  },
+  {
+    "id": "r211",
+    "line": 211,
+    "gone": "Copy the reports and the frozen plan to `corp/artifacts/<wo-nnn>-audit/` and to the",
+    "present": "^     `<vault>/lab/artifacts/<lwo-nnn>-audit/` \\(`mkdir -p` it first\\) and to the team's$"
+  },
+  {
+    "id": "r290",
+    "line": 290,
+    "gone": "**non-interference**, meaning the other hub",
+    "present": "^  \\(AI\\.Corp: :8800-8809, default tmux, `~/\\.oh-my-team`\\) and user-level files are untouched\\.$"
+  },
+  {
+    "id": "r300",
+    "line": 300,
+    "gone": "**Hub drives AI.Lab panes and restarts inside an approved live check.**",
+    "present": "^- \\*\\*The lab hub removes and re-adds project sessions inside an approved live check\\.\\*\\* It$"
+  },
+  {
+    "id": "r300-teams",
+    "line": 301,
+    "gone": "read-only against the other hub's sessions:",
+    "present": "^  cannot restart itself \\(`hub stop` kills its own pane\\), so it asks the operator for its$"
+  },
+  {
+    "id": "r-flow-314",
+    "line": 314,
+    "gone": "read the diff stat (flow spec §4).",
+    "present": "^  sha, before its `ls-remote` check \\(§0a, Also kept; provenance: flow spec §4\\)\\.$"
+  },
+  {
+    "id": "r317",
+    "line": 317,
+    "gone": "COMMIT_SIGNOFF for <WO-NNN>",
+    "present": "^  Hub: COMMIT_SIGNOFF for <LWO-NNN> \\(<repo>#<N>\\)\\. Operator tapped\\. Do exactly:$"
+  },
+  {
+    "id": "r326",
+    "line": 326,
+    "gone": "- fork: base `master`; never `.claude/`",
+    "present": "^  - fork \\(bitcars/oh-my-team-vscode\\): base `master`; never `\\.claude/`, `CLAUDE\\.local\\.md`,$"
+  },
+  {
+    "id": "r326-gh",
+    "line": 321,
+    "gone": "`gh pr create -R <owner/repo> --base <master|main>`",
+    "present": "^  `gh pr create -R bitcars/<repo> --base <master\\|main>` with <body contents>\\.$"
+  },
+  {
+    "id": "r336",
+    "line": 335,
+    "gone": "The rule lives only in the hub's project file",
+    "present": "^- \\*\\*No trailer\\.\\*\\* The rule is in `agents/hub\\.md` \\\"Dev flow\\\"\\."
+  },
+  {
+    "id": "r379",
+    "line": 379,
+    "gone": "**Dev-log** entry in the vault after a push",
+    "present": "^- \\*\\*Dev-log entry after a push:\\*\\* Corp only \\(post-push vault prompt\\), not ported \\(slice 2\\)$"
+  },
+  {
+    "id": "r424",
+    "line": 424,
+    "gone": "| Audit round past the cap; tier down | flow spec §5, §5a inv. 6 |",
+    "present": "^\\| Audit round past the cap; tier down \\| §1\\.5 cap, §3\\.3, §5\\.2; the escalation ask is in §0a, Also kept \\(provenance: flow spec §5, §5a inv\\. 6\\) \\|$"
+  },
+  {
+    "id": "r424-restart",
+    "line": 425,
+    "gone": "| Fleet-wide restart |",
+    "present": "^\\| Restarting the lab hub \\(operator\\) or its sessions outside an approved live check \\|"
+  },
+  {
+    "id": "r432",
+    "line": 432,
+    "gone": "driving AI.Lab panes or restarting the lab hub",
+    "present": "^- removing and re-adding lab project sessions \\*\\*inside an approved live check\\*\\*; never the$"
+  },
+  {
+    "id": "r-flow-453",
+    "line": 453,
+    "gone": "result (flow spec §5).",
+    "present": "^   result \\(provenance: flow spec §5\\)\\. A stub run is evidence"
+  },
+  {
+    "id": "r476",
+    "line": 476,
+    "gone": "**When AI.Corp's counterpart lives in the corp fork,**",
+    "present": "^- \\*\\*When the counterpart lives in AI\\.Corp's code, scoping is worth it\\.\\*\\*"
+  },
+  {
+    "id": "r476-skip",
+    "line": 478,
+    "gone": "hub skipped omt-core.",
+    "present": "^- \\*\\*When the counterpart lives in the owning team's own repo,\\*\\* hub skipped scoping\\.$"
+  },
+  {
+    "id": "r-flow-490",
+    "line": 490,
+    "gone": "operator tap** (flow spec §5a inv. 6).",
+    "present": "operator tap\\*\\* \\(provenance: flow spec §5a inv\\. 6\\)\\.$"
+  },
+  {
+    "id": "r-flow-533",
+    "line": 533,
+    "gone": "that is an escalation (flow",
+    "present": "already ruled Fix; that is an escalation \\(§0a, Also kept\\)\\.$"
+  },
+  {
+    "id": "r586",
+    "line": 590,
+    "gone": "Hub: new order WO-NNN = <repo>#N",
+    "present": "first line \\\"Hub: new order LWO-NNN = <repo>#N \\(<one-line$"
+  },
+  {
+    "id": "r586-gate",
+    "line": 599,
+    "gone": "\"Hub: <WO> audit r1 is in.\"",
+    "present": "\\\"Hub: <LWO> audit r1 is in\\.\\\""
+  },
+  {
+    "id": "r586-ruling",
+    "line": 601,
+    "gone": "\"Hub ruling on <WO> r1:",
+    "present": "\\\"Hub ruling on <LWO> r1:"
+  },
+  {
+    "id": "r586-report",
+    "line": 605,
+    "gone": "\"<team> <WO> (#N): REPORT.",
+    "present": "\\\"<team> <LWO> \\(#N\\): REPORT\\."
+  },
+  {
+    "id": "r609",
+    "line": 612,
+    "gone": "go by `team_message`, never `reply`; `reply` reaches",
+    "present": "^- \\*\\*Channels:\\*\\* replies between sessions go by `team_message`; `reply` reaches only your own topic$"
+  },
+  {
+    "id": "r620",
+    "line": 626,
+    "gone": "# WO-NNN — <title>",
+    "present": "^# LWO-NNN — <title>$"
+  },
+  {
+    "id": "r620-numbering",
+    "line": 635,
+    "gone": "a WO number is assigned when its ledger file is created",
+    "present": "^- \\*\\*Numbering:\\*\\* an LWO number is assigned when `<vault>/lab/tasks/LWO-NNN-<slug>\\.md` is$"
+  },
+  {
+    "id": "r641",
+    "line": 645,
+    "gone": "vault `corp/artifacts/<wo-nnn>-audit/` (`plan-v1.md`",
+    "present": "^\\| Frozen plans \\+ audit reports \\| `<vault>/lab/artifacts/<lwo-nnn>-audit/` \\(`plan-v<N>\\.md`, `<LWO>-audit-r<N>-<lens>\\.md`"
+  },
+  {
+    "id": "r641-spike",
+    "line": 646,
+    "gone": "vault `projects/<team>/wo-0NN-<kind>.md`",
+    "present": "^\\| Spike / DONE reports \\| `<vault>/lab/artifacts/<lwo-nnn>-<kind>\\.md` \\|$"
+  },
+  {
+    "id": "r641-live",
+    "line": 647,
+    "gone": "`~/.omt-scratch/<team>/<run>/`",
+    "present": "^\\| Live-run records \\| `~/\\.omt-scratch/lab-<team>/<run>/`"
+  },
+  {
+    "id": "r641-scoping",
+    "line": 648,
+    "gone": "plus a copy in omt-core's `.sisyphus/checkpoints/`",
+    "present": "^\\| Scoping text \\| the issue comment \\|$"
+  },
+  {
+    "id": "r646",
+    "line": 652,
+    "gone": "- **WO-NNN:** §4.3.",
+    "present": "^- \\*\\*LWO-NNN:\\*\\* §4\\.3 \\(lab orders; Corp's WO numbers appear only as evidence\\)\\.$"
+  },
+  {
+    "id": "r-flow-663",
+    "line": 670,
+    "gone": "Flow spec §5a's original S wording, for the record:",
+    "present": "^The flow spec's original S wording \\(provenance: flow spec §5a\\), for the record: \\\"one file;$"
+  },
+  {
+    "id": "r691",
+    "line": 698,
+    "gone": "a file that AI.Lab loads or invokes today;",
+    "present": "^- \\*\\*F:\\*\\* a file AI\\.Lab loads or invokes, or is told to read by a file it loads;$"
+  },
+  {
+    "id": "r697",
+    "line": 705,
+    "gone": "but no `plan-audit`, checkpoint or handoff skill",
+    "present": "^After this port \\(#25\\), AI\\.Lab has `agents/hub\\.md` with its \\\"Dev flow\\\" section, which tells the$"
+  },
+  {
+    "id": "r706",
+    "line": 710,
+    "gone": "flow spec v1.2.2 (Corp vault doc, loaded by no agent)",
+    "present": "^\\| 1 \\| Roles, verification-spec rules, staging by path \\| §0a of this doc \\(from flow spec v1\\.2\\.2\\)"
+  },
+  {
+    "id": "r706-row4",
+    "line": 713,
+    "gone": "(Corp only; uses `Agent`, which the hub lacks) + [recipe]",
+    "present": "^\\| 4 \\| Plan audit procedure \\| `skills/plan-audit/SKILL\\.md` \\(headless auditors\\) \\+ §1\\.5 \\| \\*\\*F\\*\\* \\|$"
+  },
+  {
+    "id": "r706-row10",
+    "line": 719,
+    "gone": "`~/.oh-my-team/CLAUDE.md` \"Gates\" (Corp only)",
+    "present": "^\\| 10 \\| Gate-before-ask; escalate a stuck gate \\| Dev flow open/stuck-gate line; §0, §2\\.1 \\| \\*\\*F\\*\\* \\|$"
+  },
+  {
+    "id": "r706-row30",
+    "line": 739,
+    "gone": "but it says nothing about the dev flow",
+    "present": "^\\| 30 \\| Hub role \\+ CLI \\| lab `agents/hub\\.md` \\| \\*\\*F\\*\\*; its \\\"Dev flow\\\" section points to this doc"
+  },
+  {
+    "id": "r706-reading",
+    "line": 741,
+    "gone": "Fifteen are written but",
+    "present": "^\\*\\*Reading\\.\\*\\* After this port, nineteen elements are F:"
+  },
+  {
+    "id": "r744",
+    "line": 751,
+    "gone": "given this spec and the flow spec",
+    "present": "^A cheaper model given this doc and the Dev flow section makes the right first moves on a new$"
+  },
+  {
+    "id": "r750",
+    "line": 758,
+    "gone": "flow spec v1.2.2, the tool list (§7.4), and the order.",
+    "present": "^  No flow spec: §0a carries the flow-spec rules this copy keeps\\."
+  },
+  {
+    "id": "r791",
+    "line": 801,
+    "gone": "creates a ledger `corp/tasks/WO-NNN-<slug>.md`",
+    "present": "^2\\. \\*\\*V:\\*\\* creates a ledger `<vault>/lab/tasks/LWO-NNN-<slug>\\.md` in the §4\\.3 shape, number$"
+  },
+  {
+    "id": "r793",
+    "line": 803,
+    "gone": "A: omt-core if the counterpart is in the corp",
+    "present": "^3\\. \\*\\*J:\\*\\* decides scoping by §3\\.2\\. On AI\\.Lab, A: asks the operator \\(start a read-only lab$"
+  },
+  {
+    "id": "r793-brief",
+    "line": 806,
+    "gone": "the scoping request carries the §1.2 needs fields:",
+    "present": "^4\\. \\*\\*J, A only, if it chose scoping:\\*\\* the scoping session's brief carries the §1\\.2 needs$"
+  },
+  {
+    "id": "r822",
+    "line": 832,
+    "gone": "Hub drives the lab restart inside an",
+    "present": "^  The lab hub asks the operator for its own restart inside an approved live check; any$"
+  },
+  {
+    "id": "r841",
+    "line": 855,
+    "gone": "4. Summarise the result below and in the WO-026 ledger.",
+    "present": "^4\\. Summarise the result below and in the order's ledger\\.$"
+  },
+  {
+    "id": "r859",
+    "line": 858,
+    "gone": "**PASS on v2.3 without the answer key",
+    "present": "^Corp's WO-026 record as of v2\\.4, evidence\\. These are Corp's runs on Corp's spec; the lab's own$"
+  },
+  {
+    "id": "r5.1-live",
+    "line": 663,
+    "gone": "live config, security surface or fleet path |",
+    "present": "security surface, fleet path or AI\\.Lab's live paths \\(§0a\\), this doc included \\| none; hub reads the plan \\|"
+  },
+  {
+    "id": "r-runs",
+    "line": 765,
+    "gone": "Two orders (§7.3), so 12 runs.",
+    "present": "^- \\*\\*Runs:\\*\\* 3 per arm per order\\. Two orders \\(§7\\.3\\), so 12 runs, plus the negative arm's 3:$"
+  },
+  {
+    "id": "r-run15",
+    "line": 853,
+    "gone": "Run all 12.",
+    "present": "^2\\. Run all 15 \\(§7\\.2\\)\\. Save raw transcripts there\\.$"
+  },
+  {
+    "id": "r189-caution",
+    "line": 189,
+    "gone": "never start routers, tmux or claude; never read secrets;",
+    "present": "^       push, and only read-only git outside the audit dir; no gh, and no fetching the issue or$"
+  },
+  {
+    "id": "r573-observe",
+    "line": 573,
+    "gone": "- a non-interference step for the other hub (its sessions, ports, tmux);",
+    "present": "^- a non-interference step for the other hub \\(its sessions, ports, tmux\\), by read-only$"
+  }
+]
