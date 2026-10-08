@@ -156,6 +156,7 @@ omt hub start   # Starts the router + hub session
 | `/oh-my-team:deep-debug <issue>` | Multi-hypothesis debugging |
 | `/oh-my-team:git-master` | Atomic commit workflow |
 | `/oh-my-team:ai-slop-remover` | Clean AI code patterns |
+| `/oh-my-team:plan-audit` | Headless plan audit before any code |
 
 ## 12 agents
 

@@ -1,0 +1,202 @@
+[
+  {
+    "id": "a-src-0a",
+    "where": "sources block",
+    "present": "^  The parts this copy relies on are in §0a\\.$"
+  },
+  {
+    "id": "a-src-skill",
+    "where": "sources block",
+    "present": "^  The lab's procedure is `skills/plan-audit/` \\(§1\\.5\\)\\.$"
+  },
+  {
+    "id": "a-hub-lab",
+    "where": "glossary Hub",
+    "present": "^  the operator\\. It does not write code\\. In this copy's rules, hub is the lab hub; in the cited$"
+  },
+  {
+    "id": "a-team-tree",
+    "where": "glossary Team",
+    "present": "^  a tap \\(§2\\.2\\)\\. Ask the operator before starting one on a repo another hub may also use\\.$"
+  },
+  {
+    "id": "a-corp-live",
+    "where": "glossary AI.Corp",
+    "present": "^  bitcars/oh-my-team-customizations\\. The lab never touches its live system \\(those ports, that$"
+  },
+  {
+    "id": "a-corp-file",
+    "where": "glossary AI.Corp",
+    "present": "^  filing an issue on its repo after re-checking the cited line \\(§3\\.9\\)\\. Cross-hub requests go$"
+  },
+  {
+    "id": "a-vault",
+    "where": "glossary Vault",
+    "present": "^  `V=\"\\$\\{OMT_VAULT_ROOT:-\\$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Bin4\\.me/omt\\}\"`$"
+  },
+  {
+    "id": "a-docs-live",
+    "where": "§0a",
+    "present": "^  - `docs/corp-mode-spec\\.md`: at the lab hub's next order \\(it reads this doc at the start of each\\)\\.$"
+  },
+  {
+    "id": "a-tamper-lab",
+    "where": "§0a",
+    "present": "^  AI\\.Lab every round-N audit brief carries it too \\(a lab addition, `skills/plan-audit/briefs/`\\)\\.$"
+  },
+  {
+    "id": "a-scope-gh",
+    "where": "§1.2",
+    "present": "^  - where to post, and that every `gh` call carries `-R bitcars/<repo>`;$"
+  },
+  {
+    "id": "a-issue",
+    "where": "§1.5",
+    "present": "^     - the issue, as hub fetched it into `<D>/issue\\.txt`: text from the bitcars account only,$"
+  },
+  {
+    "id": "a-l-lenses",
+    "where": "§1.5",
+    "present": "At L: correctness, integration and edge"
+  },
+  {
+    "id": "a-copy-symlink",
+    "where": "§1.5",
+    "present": "^  6\\. Hub checks that no file it copies is a symlink \\(`find <D> -maxdepth 1 -type l` prints$"
+  },
+  {
+    "id": "a-killed-lens",
+    "where": "§1.5",
+    "present": "On AI\\.Lab a lens is killed when its$"
+  },
+  {
+    "id": "a-gh-R",
+    "where": "§1.10",
+    "present": "^  - both: every `gh` call takes `-R bitcars/<repo>` explicitly\\."
+  },
+  {
+    "id": "a-tap-pr",
+    "where": "§2.2",
+    "present": "^or that \\*\\*changes scope or a standing ruling\\*\\*\\. One tap covers the commit, the push and the$"
+  },
+  {
+    "id": "a-tap-again",
+    "where": "§2.2",
+    "present": "^PR of the same work; ask again if what is pushed has changed since the tap\\. Every case seen:$"
+  },
+  {
+    "id": "a-scope-remove",
+    "where": "§2.2",
+    "present": "^- removing a lab scoping session once its comment is posted \\(the tap that started it covers$"
+  },
+  {
+    "id": "a-ledger-live",
+    "where": "§4.3",
+    "present": "^Live during the order: <paths it edits under agents/, skills/, bin/, hooks/, channel/, \\.claude-plugin/, settings\\.json, docs/corp-mode-spec\\.md, or \"none\"> \\(§0a\\)\\.$"
+  },
+  {
+    "id": "a-preamble",
+    "where": "§7.2",
+    "present": "^  - a lab preamble: \\\"You are the hub of AI\\.Lab, the second Oh My Team hub on this machine$"
+  },
+  {
+    "id": "a-strip",
+    "where": "§7.2",
+    "present": "^  - \\*\\*this doc with §7 and the changelog removed\\*\\*"
+  },
+  {
+    "id": "a-strip-cmd",
+    "where": "§7.2",
+    "present": "^    `awk '/\\^## 7\\\\\\. /\\{s=1\\} /\\^## 8\\\\\\. /\\{s=0\\} /\\^## Changes /\\{s=1\\} !s' docs/corp-mode-spec\\.md`;$"
+  },
+  {
+    "id": "a-flags",
+    "where": "§7.2",
+    "present": "^  Flags: `-p --tools \"\" --setting-sources \"\" --strict-mcp-config`, one `--resume` per turn,$"
+  },
+  {
+    "id": "a-negative-arm",
+    "where": "§7.2",
+    "present": "stripped doc and the Dev flow, list every deleted line \\(file:line and text\\) in the record,$"
+  },
+  {
+    "id": "a-neg-turns",
+    "where": "§7.2",
+    "present": "^  The record names which turns failed, in which runs\\.$"
+  },
+  {
+    "id": "a-79-model",
+    "where": "§7.9",
+    "present": "^- The lab hub itself runs fable \\(its `hubModel`\\)\\. The §7 acceptance runs on sonnet because the$"
+  },
+  {
+    "id": "a-79-paste",
+    "where": "§7.9",
+    "present": "^- The spec arm pastes this doc into the prompt, so it does not test the Dev flow's instruction$"
+  },
+  {
+    "id": "a-79-result",
+    "where": "§7.9",
+    "present": "^\\*\\*AI\\.Lab's result: PASS on the spec arm and the control arm; no negative-arm turn crossed its$"
+  },
+  {
+    "id": "a-corp-observe",
+    "where": "glossary AI.Corp",
+    "present": "^  through the operator\\. For a live check's non-interference step the lab may observe its live$"
+  },
+  {
+    "id": "a-vault-expand",
+    "where": "glossary Vault",
+    "present": "^  expand variables, so get the real path with `echo \"\\$V\"` first\\. The default is written here$"
+  },
+  {
+    "id": "a-vault-lab",
+    "where": "glossary Vault",
+    "present": "^  under `<vault>/lab/`; the first ledger creates the folder\\.$"
+  },
+  {
+    "id": "a-lens-slug",
+    "where": "glossary Lens",
+    "present": "^  are slugs \\(`\\[a-z-\\]\\+`\\)\\.$"
+  },
+  {
+    "id": "a-audit-launch",
+    "where": "§0a",
+    "present": "^    too\\), except that `skills/plan-audit/run\\.sh` and its `briefs/` take effect at the lab hub's$"
+  },
+  {
+    "id": "a-push-set-lab",
+    "where": "§0a",
+    "present": "\\[on AI\\.Lab: recorded when the team reports its sha, §1\\.10\\]\\.$"
+  },
+  {
+    "id": "a-l-lenses-doc",
+    "where": "§1.5",
+    "present": "^     executability and integration; for a mixed plan, correctness and edge-cases on `code\\.md`$"
+  },
+  {
+    "id": "a-shims",
+    "where": "§1.5",
+    "present": "^     user settings, hooks or MCP servers\\. Shims for omt, claude, gh, curl, git and tmux come$"
+  },
+  {
+    "id": "a-observe",
+    "where": "§1.9",
+    "present": "^  On AI\\.Lab hub checks the other hub by read-only observation only \\(`tmux -L default ls`,$"
+  },
+  {
+    "id": "a-one-repo",
+    "where": "§3.2",
+    "present": "^- \\*\\*On AI\\.Lab, a scoping session and a team can't run on one repo at once\\.\\*\\* `hub add` names a$"
+  },
+  {
+    "id": "a-preamble-corp",
+    "where": "§7.2",
+    "present": "^    you start others with hub add\\)\\. AI\\.Corp \\(:8800\\) is the other hub; you never touch its live$"
+  },
+  {
+    "id": "a-77-lab",
+    "where": "§7.7",
+    "present": "^   \\(§4\\.4\\): on AI\\.Lab `<vault>/lab/artifacts/<lwo-nnn>-agnostic-test/`; for a Corp-run order,$"
+  }
+]

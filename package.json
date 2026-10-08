@@ -38,6 +38,7 @@
     "agents/",
     "skills/",
     "hooks/",
+    "docs/corp-mode-spec.md",
     "channel/bridge.ts",
     "channel/bridge-tools.ts",
     "channel/bridge.mcp.json",

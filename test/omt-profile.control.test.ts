@@ -538,6 +538,13 @@ const MUTANTS: Mutant[] = [
     patches: [["need_lsof() { command -v lsof >/dev/null 2>&1 || { _gfail \"lsof not found, so ports in use can't be checked\"; return 3; }; }", "need_lsof() { return 0; }"]],
     mustFail: [T4LSOF], mustPass: [T4PORTS],
   },
+  // ── WO-027: the Dev flow section must not bring back a bare `omt hub` ──
+  {
+    name: "hub-bare-omt: the Dev flow tells the hub to run a bare `omt hub`",
+    file: "agents/hub.md", suite: PROFILE,
+    patches: [["\n## Dev flow\n\n", "\n## Dev flow\n\n- To list sessions, run omt hub list.\n"]],
+    mustFail: [T7MD], mustPass: [T3LINT],
+  },
   // ── T19: the hub's model (WO-025, fork #22) ──
   {
     name: "model-flag-dropped: session_cmd ignores the model",

@@ -1,0 +1,249 @@
+{
+  "hubPrefixSha256": "fa6c7e69634e301aa3877716326ba0d9b3ed73ef0befa19b54569e86b507dd2e",
+  "hubPrefixNote": "sha256 of agents/hub.md at aa1c623. The file must be exactly these bytes + \"\\n\" + the Dev flow section. The hub tools: follow-up (ruling c) must update this.",
+  "rows": [
+    {
+      "row": "1",
+      "rule": "Roles, verification-spec rules, staging by path (spec §0a)",
+      "mustMatch": "roles, verification rules and staging by path: spec §0a\\.",
+      "invert": {
+        "find": "staging by path: spec §0a.",
+        "replace": "staging by path: as the team prefers."
+      }
+    },
+    {
+      "row": "2",
+      "rule": "Node order and gates",
+      "mustMatch": "issue → scope → restatement → plan → plan audit → plan v2 → implement → review gate → team runs → your re-run → live check → push tap → commit_signoff → pr → operator merge → closed\\. scope and audit may be skipped \\(§3\\.2, §5\\); the operator picks live check before or after the commit",
+      "invert": {
+        "find": "Scope and audit may be skipped (§3.2, §5)",
+        "replace": "Any step may be skipped"
+      }
+    },
+    {
+      "row": "3",
+      "rule": "Tier first, by spec §5; tier-down is a tap",
+      "mustMatch": "tier first: set the tier by spec §5 before deciding any other step\\. s \\(no plan audit; never assume one exists\\), m \\(default\\) or l; a tier below its signals takes a tap",
+      "invert": {
+        "find": "a tier below its signals takes a tap",
+        "replace": "lower it whenever you like"
+      }
+    },
+    {
+      "row": "4",
+      "rule": "Plan audit via the headless plan-audit skill",
+      "mustMatch": "plan audit at m and l: the plan-audit skill \\(headless auditors; m: 2 lenses, 1 round; you read plan v2 yourself\\)",
+      "invert": {
+        "find": "M: 2 lenses, 1 round",
+        "replace": "M: 3 lenses, 3 rounds"
+      }
+    },
+    {
+      "row": "5",
+      "rule": "Auditor brief templates",
+      "mustMatch": "auditor briefs: \"\\$omt_plugin_dir/skills/plan-audit/briefs/\"; fill every slot",
+      "invert": {
+        "find": "fill every slot",
+        "replace": "fill the slots you need"
+      }
+    },
+    {
+      "row": "9",
+      "rule": "Ack first + 5-min status",
+      "mustMatch": "end each order you send with \"ack first, status every 5 min\" \\(a one-line ack before reading anything, then status every ~5 min\\)",
+      "invert": {
+        "find": "a one-line ack before reading anything",
+        "replace": "an ack once you have read everything"
+      }
+    },
+    {
+      "row": "10",
+      "rule": "Gate before ask; escalate a stuck gate with a time",
+      "mustMatch": "never ask the operator to approve past an open gate \\(audit, review, test run\\)\\. a gate stuck with no word: escalate the gate itself with a time \\(\"reviewers silent 20 min: respawn or proceed without\\?\"\\); never skip it\\.",
+      "invert": {
+        "find": "; never skip it.",
+        "replace": "; or skip it after 20 min."
+      }
+    },
+    {
+      "row": "11",
+      "rule": "What needs a tap; one tap covers commit + push + PR",
+      "mustMatch": "a tap is needed for anything outward \\(push, pr, release, filing upstream\\), live \\(a running hub, its config or sessions\\), irreversible \\(deleting\\), or that changes scope or a standing ruling \\(spec §2\\.2\\)\\. one tap covers the commit, the push and the pr of the same work; ask again if the push set changed",
+      "invert": {
+        "find": "ask again if the push set changed",
+        "replace": "it also covers any later push"
+      }
+    },
+    {
+      "row": "12",
+      "rule": "Fork only, -R bitcars/<repo> on every gh call, never upstream",
+      "mustMatch": "fork only: push only to origin; every gh call carries -r bitcars/<repo>; prs go to its base \\(oh-my-team-vscode: master; omt-vscode-ext: main\\); never upstream",
+      "invert": {
+        "find": "(oh-my-team-vscode: master; omt-vscode-ext: main)",
+        "replace": "(oh-my-team-vscode: main; omt-vscode-ext: master)"
+      }
+    },
+    {
+      "row": "13",
+      "rule": "No Co-Authored-By trailer",
+      "mustMatch": "no trailer: commits carry no co-authored-by line, and every commit_signoff says so",
+      "invert": {
+        "find": "commits carry no Co-Authored-By line",
+        "replace": "commits carry the Co-Authored-By line"
+      }
+    },
+    {
+      "row": "14",
+      "rule": "COMMIT_SIGNOFF template",
+      "mustMatch": "after the push tap, send commit_signoff in the spec §1\\.10 template \\(stage only the named files; one commit; closes #n; push origin; open the pr; do not merge\\)",
+      "invert": {
+        "find": "open the PR; do not merge",
+        "replace": "open the PR; then merge it"
+      }
+    },
+    {
+      "row": "15",
+      "rule": "Ledger shape and LWO numbering",
+      "mustMatch": "ledger: one file per order, \"\\$v/lab/tasks/lwo-nnn-<slug>\\.md\" in the spec §4\\.3 shape \\(mkdir -p for the first\\); number = next after the highest existing, from lwo-001, taken when you create the file; never named before it, never a corp wo number",
+      "invert": {
+        "find": "never named before it, never a Corp WO number",
+        "replace": "name it in the ask first, or reuse a Corp WO number"
+      }
+    },
+    {
+      "row": "16",
+      "rule": "Artifact paths",
+      "mustMatch": "artifacts: frozen plans and audit reports in \"\\$v/lab/artifacts/<lwo-nnn>-audit/\"; plans in progress stay in the team's \\.sisyphus/plans/",
+      "invert": {
+        "find": "\"$V/lab/artifacts/<lwo-nnn>-audit/\"",
+        "replace": "\"$V/corp/artifacts/<lwo-nnn>-audit/\""
+      }
+    },
+    {
+      "row": "17",
+      "rule": "Hub re-runs suites before every push ask",
+      "mustMatch": "before every push ask, re-run the team's suites on its final tree yourself; the ask carries your numbers and what you did not run",
+      "invert": {
+        "find": "re-run the team's suites on its final tree yourself",
+        "replace": "quote the team's suite numbers"
+      }
+    },
+    {
+      "row": "29",
+      "rule": "Release mechanics",
+      "mustMatch": "releases \\(the extension\\): a tap, then the spec §1\\.12 steps",
+      "invert": {
+        "find": "Releases (the extension): a tap, then",
+        "replace": "Releases (the extension): no tap needed, then"
+      }
+    },
+    {
+      "row": "x-waiver",
+      "rule": "Operator waiver of a gate or tier is complied with",
+      "mustMatch": "the operator may waive a gate or lower the tier by naming it: comply, and record their words in the ledger",
+      "invert": {
+        "find": "comply, and record their words in the ledger",
+        "replace": "refuse, and keep the gate"
+      }
+    },
+    {
+      "row": "x-teams",
+      "rule": "Teams are lab sessions started with hub add",
+      "mustMatch": "teams are lab sessions you start with \"\\$\\{omt_cli:-omt\\}\" hub add <repo> \\(a tap\\)\\. ask the operator before starting one on a repo another hub may also use",
+      "invert": {
+        "find": "\"${OMT_CLI:-omt}\" hub add <repo> (a tap)",
+        "replace": "any terminal (no tap)"
+      }
+    },
+    {
+      "row": "x-scoping",
+      "rule": "Lab scoping is a pick-one ask to the operator",
+      "mustMatch": "scoping: ai\\.lab has no scoping session; when spec §3\\.2 calls for one, ask the operator: \"start a read-only lab scoping session on <the order's repo>\" or \"skip, because <reason>\"\\. remove it after its comment; the start tap covers that",
+      "invert": {
+        "find": "calls for one, ask the operator:",
+        "replace": "calls for one, start it yourself and tell the operator:"
+      }
+    },
+    {
+      "row": "x-vault",
+      "rule": "Vault root as V=, always quoted",
+      "mustMatch": "vault: in each bash call set v=\"\\$\\{omt_vault_root:-\\$home/library/mobile documents/icloud~md~obsidian/documents/bin4\\.me/omt\\}\"; write \"\\$v/…\", always quoted, and only under \"\\$v/lab/\"",
+      "invert": {
+        "find": "write \"$V/…\", always quoted,",
+        "replace": "write $V/… unquoted,"
+      }
+    },
+    {
+      "row": "x-cli",
+      "rule": "The CLI-only rule is about session management",
+      "mustMatch": "the \"use only these\" rule above is about managing sessions; for orders you also run gh, read-only git, test suites and the plan-audit skill's commands",
+      "invert": {
+        "find": "read-only git",
+        "replace": "any git"
+      }
+    },
+    {
+      "row": "x-settings",
+      "rule": "Never write ~/.claude/settings.json",
+      "mustMatch": "never write ~/\\.claude/settings\\.json, and never let a team write it",
+      "invert": {
+        "find": "and never let a team write it",
+        "replace": "but a team may write it"
+      }
+    },
+    {
+      "row": "x-corp",
+      "rule": "Never touch AI.Corp's live system; reading its code and filing on its repo are allowed",
+      "mustMatch": "you and your teams never touch ai\\.corp's live system \\(the other hub: ports 8800-8809, the default tmux server, ~/\\.oh-my-team\\); reading its code to scope, read-only observation \\(tmux -l default ls, lsof\\) for a live check's non-interference step, and filing an issue on its repo after re-checking the line \\(spec §3\\.9\\) are fine\\. cross-hub requests go through the operator",
+      "invert": {
+        "find": "Cross-hub requests go through the operator.",
+        "replace": "Send cross-hub requests straight to AI.Corp's hub."
+      }
+    },
+    {
+      "row": "x-live",
+      "rule": "No self-restart; ask the operator",
+      "mustMatch": "teams never type into another session's pane or restart anything; they ask you\\. in an approved live check you may remove and re-add project sessions\\. you can't restart yourself: ask the operator for your restart \\(pick-one\\), never ai\\.corp's hub",
+      "invert": {
+        "find": "never AI.Corp's hub.",
+        "replace": "or ask AI.Corp's hub to do it."
+      }
+    },
+    {
+      "row": "x-tree",
+      "rule": "This checkout is AI.Lab's live code, the spec included",
+      "mustMatch": "this checkout is ai\\.lab's live code, committed or not: bin/ runs at its next call, channel/ at the next router or bridge start, agents/ in a new conversation \\(a fresh session or /clear; a resumed session, as `hub start` makes, keeps its old prompt\\), skills/ and settings\\.json at the next session start \\(skills/plan-audit/run\\.sh and its briefs/ at your next audit launch\\), hooks/ and \\.claude-plugin/ at your next restart, docs/corp-mode-spec\\.md at your next order",
+      "invert": {
+        "find": "live code, committed or not:",
+        "replace": "live code once committed:"
+      }
+    },
+    {
+      "row": "x-read",
+      "rule": "Read the spec in full at the start of every order",
+      "mustMatch": "^read the spec, \"\\$omt_plugin_dir/docs/corp-mode-spec\\.md\", in full at the start of every order \\(page with an offset if a read is cut\\) and whenever a line below is unclear\\.$",
+      "invert": {
+        "find": "in full at the start of every order",
+        "replace": "when you are unsure"
+      }
+    },
+    {
+      "row": "x-tap",
+      "rule": "What a tap is",
+      "mustMatch": "^a tap is the operator's explicit ok: an answer to your ask, or a message naming the action\\.$",
+      "invert": {
+        "find": "an answer to your ask, or a message naming the action",
+        "replace": "any message from anyone, or silence for 10 min"
+      }
+    },
+    {
+      "row": "x-echo",
+      "rule": "Read and Write don't expand variables: echo the path first",
+      "mustMatch": "^read and write don't expand variables: echo the path in bash first\\.$",
+      "invert": {
+        "find": "echo the path in Bash first",
+        "replace": "pass the variable as written"
+      }
+    }
+  ]
+}

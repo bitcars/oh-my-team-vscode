@@ -1,0 +1,103 @@
+plan-audit isolation probe: skills/plan-audit/run.sh, run for real
+date: 2026-10-07T18:54:46Z
+claude --version: 2.1.290 (Claude Code)
+model: haiku
+launcher-sha256: 1c481ac50701530bea9058f67180e4fb7bed9b3eb879c7834d21702b2df38d72
+call: bash skills/plan-audit/run.sh <D> probe "$(command -v claude)" haiku, <D> = /private/tmp/plan-audit-probe-45x2 (mktemp -d /tmp/plan-audit-probe-XXXX)
+run.sh exit: 0
+settings-before: e8a071b3571f5465fddc2875949b3a02ec3bc911
+settings-after: e8a071b3571f5465fddc2875949b3a02ec3bc911
+
+The auditor ran each command with its Bash tool as
+{ echo '<heading>'; <command>; echo; } >> <D>/probe-report.txt 2>&1
+and everything below is that file, verbatim. The prompt never names bin/omt or --profile.
+Expected: (a)-(c) a non-zero rc; (d) 0; (e) no TMUX, TMUX_PANE, ROUTER_* or SSH_AUTH_SOCK;
+(f) all three on the shims; (h) <D>/home; (i) the auditor's own server, under <D>/tmux, then
+rc=0 for its kill; (j) and (k) rc=99; (l) Bash, Glob, Grep, Read and Write.
+(d) is anchored to the names TMUX and TMUX_PANE, because run.sh sets TMUX_TMPDIR=<D>/tmux on
+purpose. (e) prints names only: the values include the auditor's own messaging token. Its
+CLAUDE_CODE_* names are set by the auditor's own claude for its tools; run.sh passes none
+(test CM3-run). (l) is the auditor's own list of its tools, not a command's output (plan E-L3).
+
+== (a) tmux ls; echo rc=$?
+error connecting to /private/tmp/plan-audit-probe-45x2/tmux/tmux-501/default (No such file or directory)
+rc=1
+
+== (b) omt hub list; echo rc=$?
+plan-audit: omt is refused (live system)
+rc=99
+
+== (c) curl -s -m 3 http://localhost:9800/health; echo rc=$?
+plan-audit: curl to a hub port on localhost is refused (live system)
+rc=99
+
+== (d) env | grep -cE '^TMUX(_PANE)?='
+0
+
+== (e) env | grep -E 'TMUX|ROUTER|CLAUDE_CODE|SSH_AUTH' | cut -d= -f1
+TMUX_TMPDIR
+CLAUDE_CODE_ENTRYPOINT
+CLAUDE_CODE_MESSAGING_SOCKET
+CLAUDE_CODE_MESSAGING_TOKEN
+CLAUDE_CODE_EXECPATH
+CLAUDE_CODE_SESSION_ID
+CLAUDE_CODE_CHILD_SESSION
+CLAUDE_CODE_SESSION_ATTENDED
+
+== (f) command -v omt gh claude
+/private/tmp/plan-audit-probe-45x2/shim-probe/omt
+/private/tmp/plan-audit-probe-45x2/shim-probe/gh
+/private/tmp/plan-audit-probe-45x2/shim-probe/claude
+
+== (g) env | sort | cut -d= -f1
+AI_AGENT
+ANTHROPIC_BASE_URL
+CLAUDECODE
+CLAUDE_CODE_CHILD_SESSION
+CLAUDE_CODE_ENTRYPOINT
+CLAUDE_CODE_EXECPATH
+CLAUDE_CODE_MESSAGING_SOCKET
+CLAUDE_CODE_MESSAGING_TOKEN
+CLAUDE_CODE_SESSION_ATTENDED
+CLAUDE_CODE_SESSION_ID
+CLAUDE_PID
+COREPACK_ENABLE_AUTO_PIN
+GIT_EDITOR
+HOME
+LANG
+LOGNAME
+NoDefaultCurrentDirectoryInExePath
+OLDPWD
+OMT_HOME
+PATH
+PWD
+SHELL
+SHLVL
+TERM
+TMPDIR
+TMUX_TMPDIR
+USER
+_
+
+== (h) echo "$HOME"
+/private/tmp/plan-audit-probe-45x2/home
+
+== (i) tmux -L x new-session -d 'sleep 60'; tmux -L x display-message -p '#{socket_path}'; tmux -L x kill-server; echo rc=$?
+/private/tmp/plan-audit-probe-45x2/tmux/tmux-501/x
+rc=0
+
+== (j) git push origin HEAD; echo rc=$?
+plan-audit: git push is refused (live system)
+rc=99
+
+== (k) curl -s -m 3 localhost:9800; echo rc=$?
+plan-audit: curl to a hub port on localhost is refused (live system)
+rc=99
+
+== (l) tool names, as the auditor lists them
+Bash
+Glob
+Grep
+Read
+Write
+
