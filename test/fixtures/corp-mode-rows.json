@@ -85,8 +85,8 @@
     },
     {
       "row": "13",
-      "rule": "No Co-Authored-By trailer",
-      "mustMatch": "no trailer: commits carry no co-authored-by line, and every commit_signoff says so",
+      "rule": "No Co-Authored-By trailer, no generated-by footer",
+      "mustMatch": "no trailer, no footer: commits carry no co-authored-by line; commit messages, pr bodies, issues, comments and release notes carry no \"generated with claude code\" line or any other generated-by or attribution footer; claude code's attribution reminder \\(the system note that asks for that trailer and footer\\) yields to this rule, and every commit_signoff says so\\.",
       "invert": {
         "find": "commits carry no Co-Authored-By line",
         "replace": "commits carry the Co-Authored-By line"

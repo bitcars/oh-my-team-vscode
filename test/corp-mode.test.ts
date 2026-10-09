@@ -12,7 +12,9 @@
  * there), and CM5
  * runs `claude plugin validate` in a sandbox. Nothing here starts the real
  * claude session or touches a live hub; CM3-omt-profile only reads the shas of
- * the lab's CLI and registry. test/corp-mode.control.test.ts re-runs
+ * the lab's CLI and registry. CM-attr, CM-attr-pin, CM-grep-* and CM-settings check the
+ * no-trailer/no-footer rule (#32) in every agents/*.md, the spec and the omtv
+ * settings example (fixtures/attribution.json). test/corp-mode.control.test.ts re-runs
  * these against mutated copies and names them by title, so keep titles unique
  * and stable.
  */
@@ -37,8 +39,8 @@ const DOC_TITLE = "# Corp mode spec — v2.4-lab.1 (AI.Lab copy)";
 
 /** The Dev flow rows (plan v2 §4 plus the review fix round), pinned by id: a dropped row is a dropped rule. */
 const ROW_IDS = ["1", "2", "3", "4", "5", "9", "10", "11", "12", "13", "14", "15", "16", "17", "29", "x-waiver", "x-teams", "x-scoping", "x-vault", "x-cli", "x-settings", "x-corp", "x-live", "x-tree", "x-read", "x-tap", "x-echo"];
-const ADDITION_COUNT = 40;
-const REWRITE_COUNT = 69;
+const ADDITION_COUNT = 41;
+const REWRITE_COUNT = 72;
 /**
  * sha256 pins (WO-027 review round 2, M-A): the keyword checks in CM2 and CM4
  * say why each part matters, but an inverted rule keeps its keywords, so the
@@ -46,6 +48,8 @@ const REWRITE_COUNT = 69;
  */
 const ZERO_A_SHA256 = "e4edd367c054e6e5f8bde1098e36c860e0f59f079ac551d10084de0e31ba538e";
 const CAUTION_SHA256 = "56830a2161704845ab0f09a83666c2bf12c3233b3f60e55778a89a5879c46203";
+/** #32: the team agents' Attribution block (test/fixtures/attribution.json `block`); CM-attr compares the agents with the fixture, this pins the fixture. */
+const ATTR_BLOCK_SHA256 = "d4f3619d0848acce6a690f5475261881f2a870c605d5b2be172db08e89e20deb";
 
 interface Row {
   row: string;
@@ -233,7 +237,7 @@ describe("CM hub.md Dev flow", () => {
 // ── fixture pins ──────────────────────────────────────────────────────────
 
 describe("CM fixtures", () => {
-  test("CM fixtures pinned: the 27 row ids, 40 additions and 69 rewrites, ids unique, every row with an inversion", () => {
+  test("CM fixtures pinned: the 27 row ids, 41 additions and 72 rewrites, ids unique, every row with an inversion", () => {
     const ids = ROWS_FIX.rows.map((r) => r.row);
     expect(ids).toEqual(ROW_IDS);
     expect(ROWS_FIX.rows.filter((r) => !(typeof r.invert?.find === "string" && r.invert.find && typeof r.invert.replace === "string")).map((r) => r.row)).toEqual([]);
@@ -939,5 +943,86 @@ describe("CM plan-audit skill", () => {
       curlRefused: rc("k") === 99,
       tools: out("l"),
     }).toEqual({ home: `${D}/home`, socketInD: true, iKilled: true, gitPushRefused: true, curlRefused: true, tools: "Bash\nGlob\nGrep\nRead\nWrite" });
+  });
+});
+
+// ── #32: no trailer, no footer, in every agent file, the spec and the omtv settings example ──
+
+const AGENTS = path.join(CHECKOUT, "agents");
+const ATTR = JSON.parse(readFileSync(path.join(FIX, "attribution.json"), "utf-8")) as {
+  block: string;
+  hubLine: string;
+  specFooter: string[];
+  specTrailer: string[];
+  settings: { attribution: { commit: string; pr: string; sessionUrl: boolean } };
+  omtvLine: string;
+};
+const AGENT_NAMES = ["atlas", "explorer", "hephaestus", "hub", "librarian", "metis", "momus", "oracle", "prometheus", "reviewer", "security-auditor", "sisyphus"].map((n) => `${n}.md`);
+const TEAM_AGENTS = AGENT_NAMES.filter((f) => f !== "hub.md");
+const blockLine = (n: number) => ATTR.block.split("\n")[n];
+/** `file: line` for every line of `files` (name → text) that hits `re`, sorted. */
+function grepLines(files: [string, string][], re: RegExp): string[] {
+  return files.flatMap(([f, t]) => t.split("\n").filter((l) => re.test(l)).map((l) => `${f}: ${l}`)).sort();
+}
+function attributionFiles(): [string, string][] {
+  const agents = readdirSync(AGENTS).filter((f) => f.endsWith(".md")).sort();
+  return [...agents.map((f) => [`agents/${f}`, read(path.join(AGENTS, f))] as [string, string]), ["docs/corp-mode-spec.md", read(DOC)]];
+}
+
+describe("CM agent attribution", () => {
+  test("CM-attr each team agent ends with the exact Attribution block, once", () => {
+    expect(readdirSync(AGENTS).filter((f) => f.endsWith(".md")).sort()).toEqual(AGENT_NAMES);
+    const problems: { file: string; problem: string }[] = [];
+    for (const f of TEAM_AGENTS) {
+      const t = read(path.join(AGENTS, f));
+      if (!t.endsWith("\n" + ATTR.block)) problems.push({ file: f, problem: "does not end with the block" });
+      if (t.split(ATTR.block).length - 1 !== 1) problems.push({ file: f, problem: "block not exactly once" });
+      if (fenced(t).filter((l) => !l.inFence && l.line === "## Attribution").length !== 1) problems.push({ file: f, problem: "heading not once outside a fence" });
+      if (fenced(t).some((l) => l.inFence && l.line === "## Attribution")) problems.push({ file: f, problem: "heading inside a fence" });
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test("CM-attr-pin the Attribution block is byte-identical to its pinned sha256", () => {
+    expect(sha("sha256", ATTR.block)).toBe(ATTR_BLOCK_SHA256);
+  });
+
+  test("CM-grep-footer every \"generated with\" line in agents/ and the spec is a listed prohibition", () => {
+    const re = /generated with/i;
+    // presence control: the collector sees a real footer
+    expect(grepLines([["x", "a\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\nb"]], re)).toEqual(["x: 🤖 Generated with [Claude Code](https://claude.com/claude-code)"]);
+    const want = [
+      ...TEAM_AGENTS.map((f) => `agents/${f}: ${blockLine(3)}`),
+      `agents/hub.md: ${ATTR.hubLine}`,
+      ...ATTR.specFooter.map((l) => `docs/corp-mode-spec.md: ${l}`),
+    ].sort();
+    expect(want.length).toBe(15);
+    expect(grepLines(attributionFiles(), re)).toEqual(want);
+  });
+
+  test("CM-grep-trailer every \"co-authored-by\" line in agents/ and the spec is a listed prohibition", () => {
+    const re = /co-authored-by/i;
+    expect(grepLines([["x", "a\nCo-Authored-By: Claude <noreply@anthropic.com>\nb"]], re)).toEqual(["x: Co-Authored-By: Claude <noreply@anthropic.com>"]);
+    const want = [
+      ...TEAM_AGENTS.map((f) => `agents/${f}: ${blockLine(2)}`),
+      `agents/hub.md: ${ATTR.hubLine}`,
+      ...ATTR.specTrailer.map((l) => `docs/corp-mode-spec.md: ${l}`),
+    ].sort();
+    expect(want.length).toBe(14);
+    expect(grepLines(attributionFiles(), re)).toEqual(want);
+  });
+
+  test("CM-settings the omtv settings example turns attribution off and omtv.md points to it", () => {
+    const raw = read(path.join(CHECKOUT, "docs", "omtv-settings.example.json"));
+    let j: unknown = null;
+    try {
+      j = JSON.parse(raw);
+    } catch (e) {
+      throw new Error(`docs/omtv-settings.example.json is not JSON: ${String(e)}`);
+    }
+    expect(j).toEqual(ATTR.settings);
+    const a = (j as { attribution?: { commit?: unknown; pr?: unknown; sessionUrl?: unknown } }).attribution;
+    expect({ commit: typeof a?.commit, pr: typeof a?.pr, sessionUrl: typeof a?.sessionUrl, values: [a?.commit, a?.pr, a?.sessionUrl] }).toEqual({ commit: "string", pr: "string", sessionUrl: "boolean", values: ["", "", false] });
+    expect(read(path.join(CHECKOUT, "docs", "omtv.md")).split("\n").filter((l) => l === ATTR.omtvLine).length).toBe(1);
   });
 });

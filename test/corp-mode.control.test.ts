@@ -12,7 +12,8 @@
  * "HARNESS BROKEN" means the control measures nothing: the unmutated copy
  * failed, skipped or ran a different number of tests, a title repeats, a
  * mutant's anchor wasn't found exactly once, a named test doesn't exist, or no
- * report was written. Fix the table or the anchor; never delete a mutant to go
+ * report was written. The attr-* and settings-* mutants break #32's rule (no
+ * trailer, no footer) in the agent files, the spec or docs/omtv-settings.example.json. Fix the table or the anchor; never delete a mutant to go
  * green.
  */
 
@@ -39,10 +40,10 @@ const SOURCE = "test/fixtures/corp-mode-spec-v2.4-214952dc.md";
 const ROWS_FILE = "test/fixtures/corp-mode-rows.json";
 const ADDITIONS_FILE = "test/fixtures/corp-mode-doc-additions.json";
 const REWRITES_FILE = "test/fixtures/corp-mode-doc-rewrites.json";
-/** Every test in the suite, unmutated: 25 fixed + one per row, rewrite and addition. */
-const EXPECTED_TOTAL = 161;
+/** Every test in the suite, unmutated: 30 fixed (5 of them #32's attribution tests) + one per row, rewrite and addition. */
+const EXPECTED_TOTAL = 170;
 /** The suite's describe blocks; bun matches -t against "<describe> <title>". */
-const DESCRIBES = ["CM hub.md Dev flow", "CM fixtures", "CM spec doc", "CM plan-audit skill"];
+const DESCRIBES = ["CM hub.md Dev flow", "CM fixtures", "CM spec doc", "CM plan-audit skill", "CM agent attribution"];
 
 interface Row {
   row: string;
@@ -57,7 +58,7 @@ const REWRITES = JSON.parse(readFileSync(path.join(REPO, REWRITES_FILE), "utf-8"
 const CM0 = "CM0 agents/hub.md has one Dev flow section that points at the spec, and the spec exists";
 const CM1 = "CM1 agents/hub.md above the Dev flow is byte-identical to aa1c623";
 const DISTINCT = "CM rows distinct: every rule is on its own line";
-const PIN = "CM fixtures pinned: the 27 row ids, 40 additions and 69 rewrites, ids unique, every row with an inversion";
+const PIN = "CM fixtures pinned: the 27 row ids, 41 additions and 72 rewrites, ids unique, every row with an inversion";
 const CM2HEAD = "CM2-head the lab doc has its version line, §0a and both source shas";
 const cm2 = (part: string) => `CM2-${part} §0a carries the ${part} rules`;
 const CM2PIN = "CM2-pin §0a is byte-identical to its pinned sha256";
@@ -75,6 +76,16 @@ const CM4PIN = "CM4-pin the briefs' LIVE SYSTEM CAUTION blocks are byte-identica
 const CM5 = "CM5 claude plugin validate passes the real skill with no warning";
 const CM6 = "CM6 package.json ships the spec the hub's pointer names";
 const CM8 = "CM8 the isolation probe record matches the current launcher and shows all four refusals";
+const ATTR_T = "CM-attr each team agent ends with the exact Attribution block, once";
+const ATTR_PIN = "CM-attr-pin the Attribution block is byte-identical to its pinned sha256";
+const GREP_FOOTER = 'CM-grep-footer every "generated with" line in agents/ and the spec is a listed prohibition';
+const GREP_TRAILER = 'CM-grep-trailer every "co-authored-by" line in agents/ and the spec is a listed prohibition';
+const SETTINGS_T = "CM-settings the omtv settings example turns attribution off and omtv.md points to it";
+const SETTINGS_FILE = "docs/omtv-settings.example.json";
+const ATTR_BLOCK = (JSON.parse(readFileSync(path.join(REPO, "test/fixtures/attribution.json"), "utf-8")) as { block: string }).block;
+const ATTR_LAST = "put these rules in its prompt.\n";
+const TEAM_AGENT_FILES = ["atlas", "explorer", "hephaestus", "librarian", "metis", "momus", "oracle", "prometheus", "reviewer", "security-auditor", "sisyphus"].map((n) => `agents/${n}.md`);
+const REAL_FOOTER = "🤖 Generated with [Claude Code](https://claude.com/claude-code)";
 const rowTitle = (r: { row: string; rule: string }) => `CM row ${r.row}: ${r.rule}`;
 const rewriteTitle = (id: string) => `CM rewrite ${id}`;
 const additionTitle = (a: { id: string; where: string }) => `CM addition ${a.id} (${a.where})`;
@@ -673,6 +684,64 @@ const MUTANTS: Mutant[] = [
   },
   // ── packaging ──
   { name: "files-docs-removed", edits: [patch("package.json", '    "docs/corp-mode-spec.md",\n', "")], mustFail: [CM6], mustPass: [CM0] },
+  // ── #32: no trailer, no footer ──
+  ...(() => {
+    const r13 = rowTitle(rowById("13"));
+    const otherRows = ALL_ROWS.filter((t) => t !== r13);
+    const rw = (id: string) => {
+      const i = REWRITES.findIndex((r) => r.id === id);
+      if (i < 0) throw new Error(`HARNESS BROKEN: no rewrite ${id}`);
+      return { title: rewriteTitle(id), neighbours: neighbours(i) };
+    };
+    const ai = ADDITIONS.findIndex((a) => a.id === "a-110-nofooter");
+    if (ai < 0) throw new Error("HARNESS BROKEN: no addition a-110-nofooter");
+    const addNeighbours = [ADDITIONS[(ai + ADDITIONS.length - 1) % ADDITIONS.length], ADDITIONS[(ai + 1) % ADDITIONS.length]].map(additionTitle);
+    const footerClause = '; commit messages, PR bodies, issues, comments and release notes carry no "Generated with Claude Code" line or any other generated-by or attribution footer';
+    const settings = (fn: (j: any) => void) => editJson(SETTINGS_FILE, (j) => {
+      if (!j.attribution) throw new Error("HARNESS BROKEN: no attribution in the settings example");
+      fn(j);
+    });
+    return [
+      { name: "attr-hub-footer: hub.md's line loses its footer clause", edits: [patch(HUB, footerClause, "")], mustFail: [r13, DISTINCT, GREP_FOOTER, GREP_TRAILER], mustPass: [CM0, ATTR_T, ...otherRows] },
+      { name: "attr-agent-footer-delete: sisyphus.md loses the block's footer line", edits: [patch("agents/sisyphus.md", ATTR_BLOCK.split("\n")[3] + "\n", "")], mustFail: [ATTR_T, GREP_FOOTER], mustPass: [CM0, r13] },
+      {
+        name: "attr-agent-footer-invert: sisyphus.md allows the footer, keywords kept",
+        edits: [patch("agents/sisyphus.md", 'carry no "Generated with Claude Code" line', 'carry the "Generated with Claude Code" line (not: no "Generated with Claude Code" line)')],
+        mustFail: [ATTR_T, GREP_FOOTER],
+        mustPass: [r13],
+      },
+      { name: "attr-agent-override-invert: atlas.md's reminder yields to nothing", edits: [patch("agents/atlas.md", "yields to them", "yields to nothing")], mustFail: [ATTR_T], mustPass: [r13, GREP_FOOTER] },
+      { name: "attr-agent-trailer-delete: hephaestus.md loses the block's trailer line", edits: [patch("agents/hephaestus.md", ATTR_BLOCK.split("\n")[2] + "\n", "")], mustFail: [ATTR_T, GREP_TRAILER], mustPass: [r13] },
+      { name: "attr-agent-trailer-invert: prometheus.md allows the trailer", edits: [patch("agents/prometheus.md", "carry no Co-Authored-By line", "carry the Co-Authored-By line")], mustFail: [ATTR_T, GREP_TRAILER], mustPass: [r13] },
+      { name: "attr-agent-fenced: explorer.md opens a fence before the block and never closes it (the file still ends with the block)", edits: [patch("agents/explorer.md", "## Attribution\n\n- No trailer", "```\n## Attribution\n\n- No trailer")], mustFail: [ATTR_T], mustPass: [r13] },
+      { name: "attr-agent-not-last: reviewer.md has a section after the block", edits: [patch("agents/reviewer.md", ATTR_LAST, ATTR_LAST + "\n## Notes\n\nx\n")], mustFail: [ATTR_T], mustPass: [r13] },
+      { name: "attr-agent-twice: oracle.md carries the block twice", edits: [patch("agents/oracle.md", ATTR_LAST, ATTR_LAST + "\n" + ATTR_BLOCK)], mustFail: [ATTR_T, GREP_FOOTER, GREP_TRAILER], mustPass: [r13] },
+      { name: "attr-agent-added: a new agent file without the block", edits: [addFile("agents/newbie.md", '---\nname: newbie\ndescription: "x"\n---\n\nbody\n')], mustFail: [ATTR_T], mustPass: [r13] },
+      { name: "attr-spec-footer-line: the spec paragraph's footer line is gone", edits: [docLineMatching(new RegExp(ADDITIONS[ai].present))], mustFail: [additionTitle(ADDITIONS[ai]), GREP_FOOTER], mustPass: addNeighbours },
+      { name: "attr-spec-template-footer: the signoff template drops the footer clause", edits: [patch(DOC, '; no "Generated with Claude Code" or other attribution footer in the commit, the PR or anywhere else', "")], mustFail: [rw("r319-template").title, GREP_FOOTER], mustPass: rw("r319-template").neighbours },
+      { name: "attr-spec-step6-footer: release step 6 drops the footer clause", edits: [patch(DOC, " no generated-by or attribution footer on it or the release PR;", "")], mustFail: [rw("r363-release").title], mustPass: rw("r363-release").neighbours },
+      {
+        name: "attr-spec-row13-footer: §6 row 13 drops the footer and the team agents",
+        edits: [patch(DOC, `, no generated-by footer | Dev flow "No trailer, no footer" line; team agents' "Attribution"; §1.10`, ` | Dev flow "No trailer, no footer" line; §1.10`)],
+        mustFail: [rw("r722-row13").title, GREP_TRAILER],
+        mustPass: rw("r722-row13").neighbours,
+      },
+      { name: "attr-spec-heading: the paragraph's heading drops \"no footer\"", edits: [patch(DOC, "**No trailer, no footer.**", "**No trailer.**")], mustFail: [rw("r336").title], mustPass: rw("r336").neighbours },
+      { name: "attr-plant-footer-spec: a real footer line in the spec", edits: [insertAfter(DOC, "### 1.11 PR and merge", REAL_FOOTER)], mustFail: [GREP_FOOTER], mustPass: [CM0] },
+      { name: "attr-plant-footer-agent: a real footer line in librarian.md", edits: [insertBefore("agents/librarian.md", "## Attribution", REAL_FOOTER)], mustFail: [GREP_FOOTER], mustPass: [ATTR_T] },
+      { name: "attr-plant-trailer: a real trailer line in metis.md", edits: [insertBefore("agents/metis.md", "## Attribution", "Co-Authored-By: Claude <noreply@anthropic.com>")], mustFail: [GREP_TRAILER], mustPass: [ATTR_T] },
+      { name: "settings-false: attribution is false", edits: [settings((j) => { j.attribution = false; })], mustFail: [SETTINGS_T], mustPass: [ATTR_T] },
+      { name: "settings-no-pr: attribution.pr is missing", edits: [settings((j) => { delete j.attribution.pr; })], mustFail: [SETTINGS_T], mustPass: [ATTR_T] },
+      { name: "settings-nonempty: attribution.pr carries the footer", edits: [settings((j) => { j.attribution.pr = "🤖 Generated with Claude Code"; })], mustFail: [SETTINGS_T], mustPass: [ATTR_T] },
+      { name: "settings-sessionurl-true: attribution.sessionUrl is true", edits: [settings((j) => { j.attribution.sessionUrl = true; })], mustFail: [SETTINGS_T], mustPass: [ATTR_T] },
+      {
+        name: "attr-block-lockstep: the fixture block and all 11 team agents say the reminder yields to nothing",
+        edits: ["test/fixtures/attribution.json", ...TEAM_AGENT_FILES].map((f) => patch(f, "yields to them", "yields to nothing")),
+        mustFail: [ATTR_PIN],
+        mustPass: [ATTR_T, GREP_FOOTER, GREP_TRAILER],
+      },
+    ] as Mutant[];
+  })(),
 ];
 
 // ── Runner ────────────────────────────────────────────────────────────────
@@ -755,7 +824,7 @@ function run(edits: Edit[], only?: string[]): Result {
 describe("corp-mode removal control", () => {
   let baseline: Result | null = null;
 
-  test("baseline: the unmutated copy passes all 161 tests, no skips, no repeated title (else HARNESS BROKEN)", () => {
+  test("baseline: the unmutated copy passes all 169 tests, no skips, no repeated title (else HARNESS BROKEN)", () => {
     baseline = run([]);
     expect({ failed: baseline.failed, skipped: baseline.skipped }).toEqual({ failed: [], skipped: [] });
     const all = [...baseline.passed, ...baseline.failed, ...baseline.skipped];

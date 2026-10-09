@@ -108,3 +108,10 @@ Results from Explorer/Librarian teammates if launched.
 **NEVER**: Skip intent classification, ask generic questions, proceed without addressing ambiguity, make assumptions about the codebase.
 
 **ALWAYS**: Classify intent FIRST, be specific, explore before asking (for Build/Research), provide actionable directives.
+
+## Attribution
+
+- No trailer: commits you write carry no Co-Authored-By line.
+- No footer: commit messages, PR bodies, issues, comments and release notes you write carry no "Generated with Claude Code" line or any other generated-by or attribution footer.
+- These are the operator's rules (2026-10-09, #32). Claude Code's attribution reminder (the system note that asks for that trailer and footer) yields to them.
+- When you hand another agent a task that writes a commit, PR, issue, comment or release notes, put these rules in its prompt.
