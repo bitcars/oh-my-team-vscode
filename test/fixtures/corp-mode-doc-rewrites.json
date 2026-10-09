@@ -144,6 +144,12 @@
     "present": "^  Hub: COMMIT_SIGNOFF for <LWO-NNN> \\(<repo>#<N>\\)\\. Operator tapped\\. Do exactly:$"
   },
   {
+    "id": "r319-template",
+    "line": 319,
+    "gone": "Closes #<N>, no trailer.",
+    "present": "^  One commit <with your drafted message>, Closes #<N>, no trailer; no \"Generated with Claude Code\" or other attribution footer in the commit, the PR or anywhere else\\.$"
+  },
+  {
     "id": "r326",
     "line": 326,
     "gone": "- fork: base `master`; never `.claude/`",
@@ -159,7 +165,13 @@
     "id": "r336",
     "line": 335,
     "gone": "The rule lives only in the hub's project file",
-    "present": "^- \\*\\*No trailer\\.\\*\\* The rule is in `agents/hub\\.md` \\\"Dev flow\\\"\\."
+    "present": "^- \\*\\*No trailer, no footer\\.\\*\\* The rule is in `agents/hub\\.md` \\\"Dev flow\\\" and in every team$"
+  },
+  {
+    "id": "r363-release",
+    "line": 363,
+    "gone": "\"release: x.y.z\", no trailer;\n",
+    "present": "^  6\\. one commit \"release: x\\.y\\.z\", no trailer; no generated-by or attribution footer on it or the release PR;$"
   },
   {
     "id": "r379",
@@ -322,6 +334,12 @@
     "line": 719,
     "gone": "`~/.oh-my-team/CLAUDE.md` \"Gates\" (Corp only)",
     "present": "^\\| 10 \\| Gate-before-ask; escalate a stuck gate \\| Dev flow open/stuck-gate line; §0, §2\\.1 \\| \\*\\*F\\*\\* \\|$"
+  },
+  {
+    "id": "r722-row13",
+    "line": 722,
+    "gone": "| 13 | No Co-Authored-By trailer | `~/omt-hub/CLAUDE.local.md:103` (hub only); restated in each signoff | P |",
+    "present": "^\\| 13 \\| No Co-Authored-By trailer, no generated-by footer \\| Dev flow \"No trailer, no footer\" line; team agents' \"Attribution\"; §1\\.10 \\| \\*\\*F\\*\\* \\|$"
   },
   {
     "id": "r706-row30",

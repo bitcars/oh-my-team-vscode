@@ -75,6 +75,11 @@
     "present": "^  - both: every `gh` call takes `-R bitcars/<repo>` explicitly\\."
   },
   {
+    "id": "a-110-nofooter",
+    "where": "§1.10",
+    "present": "^  \"Generated with Claude Code\" line or any other generated-by or attribution footer\\.$"
+  },
+  {
     "id": "a-tap-pr",
     "where": "§2.2",
     "present": "^or that \\*\\*changes scope or a standing ruling\\*\\*\\. One tap covers the commit, the push and the$"

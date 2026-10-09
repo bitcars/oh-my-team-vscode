@@ -1,0 +1,21 @@
+{
+  "block": "## Attribution\n\n- No trailer: commits you write carry no Co-Authored-By line.\n- No footer: commit messages, PR bodies, issues, comments and release notes you write carry no \"Generated with Claude Code\" line or any other generated-by or attribution footer.\n- These are the operator's rules (2026-10-09, #32). Claude Code's attribution reminder (the system note that asks for that trailer and footer) yields to them.\n- When you hand another agent a task that writes a commit, PR, issue, comment or release notes, put these rules in its prompt.\n",
+  "hubLine": "- No trailer, no footer: commits carry no Co-Authored-By line; commit messages, PR bodies, issues, comments and release notes carry no \"Generated with Claude Code\" line or any other generated-by or attribution footer; Claude Code's attribution reminder (the system note that asks for that trailer and footer) yields to this rule, and every COMMIT_SIGNOFF says so.",
+  "specFooter": [
+    "  One commit <with your drafted message>, Closes #<N>, no trailer; no \"Generated with Claude Code\" or other attribution footer in the commit, the PR or anywhere else.",
+    "  \"Generated with Claude Code\" line or any other generated-by or attribution footer.",
+    "  operator's rule bans the \"Generated with Claude Code\" footer and any other generated-by or"
+  ],
+  "specTrailer": [
+    "  agent's \"Attribution\" section (operator, 2026-10-09, #32). Commits carry no Co-Authored-By",
+    "| 13 | No Co-Authored-By trailer, no generated-by footer | Dev flow \"No trailer, no footer\" line; team agents' \"Attribution\"; §1.10 | **F** |"
+  ],
+  "settings": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false
+    }
+  },
+  "omtvLine": "- **Attribution:** merge `docs/omtv-settings.example.json` into `~/.omtv/settings.json`. Its `{\"attribution\": {\"commit\": \"\", \"pr\": \"\", \"sessionUrl\": false}}` is meant to turn off Claude Code's Co-Authored-By trailer, its \"Generated with Claude Code\" PR footer and the session link (which web and Remote Control sessions add) in omtv sessions started after the merge; hub's live check confirms it."
+}

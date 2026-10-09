@@ -74,6 +74,7 @@ To opt back in:
 - **Settings:** copy the blocks you want into `~/.omtv/settings.json`; it is
   passed with `--settings`. Don't copy hooks that read `~/.oh-my-team` unless
   you point them at `~/.omtv`.
+- **Attribution:** merge `docs/omtv-settings.example.json` into `~/.omtv/settings.json`. Its `{"attribution": {"commit": "", "pr": "", "sessionUrl": false}}` is meant to turn off Claude Code's Co-Authored-By trailer, its "Generated with Claude Code" PR footer and the session link (which web and Remote Control sessions add) in omtv sessions started after the merge; hub's live check confirms it.
 - **MCP servers:** list them in `~/.omtv/mcp-extra.json` as
   `{"mcpServers": {"librarian": {…}}}`. They are merged into each session's
   MCP file. An entry named `omt-bridge` or `omtv-bridge`, or one that runs

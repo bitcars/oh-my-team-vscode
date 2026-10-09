@@ -487,7 +487,7 @@ fixed (§3). Each node lists **owner**, **needs**, **makes**, and **seen in**.
   ```
   Hub: COMMIT_SIGNOFF for <LWO-NNN> (<repo>#<N>). Operator tapped. Do exactly:
   stage only the <k> files (<path list>); never .claude/, CLAUDE.local.md, .mcp.json<, repo excludes>.
-  One commit <with your drafted message>, Closes #<N>, no trailer.
+  One commit <with your drafted message>, Closes #<N>, no trailer; no "Generated with Claude Code" or other attribution footer in the commit, the PR or anywhere else.
   Push origin <branch> (bitcars fork only).
   `gh pr create -R bitcars/<repo> --base <master|main>` with <body contents>.
   Show `git status --short` after staging and after commit.
@@ -505,9 +505,15 @@ fixed (§3). Each node lists **owner**, **needs**, **makes**, and **seen in**.
   pass" if pending), and known limitations naming follow-up issues.
 - **Optional lines seen:** "One push of this commit is covered" [ev:356]; a dev-log entry in
   the report list.
-- **No trailer.** The rule is in `agents/hub.md` "Dev flow". Teams' default adds a
-  Co-Authored-By line, so hub restates "no trailer" in every signoff [ev:115; the porter
-  confirmed it at ev:1379]. In Corp's evidence the rule lived only in Corp's hub project file
+- **No trailer, no footer.** The rule is in `agents/hub.md` "Dev flow" and in every team
+  agent's "Attribution" section (operator, 2026-10-09, #32). Commits carry no Co-Authored-By
+  line, and commit messages, PR bodies, issues, comments and release notes carry no
+  "Generated with Claude Code" line or any other generated-by or attribution footer.
+  The agent files mean the rule to take precedence over Claude Code's attribution reminder,
+  and the lab settings' `attribution` key (`docs/omtv-settings.example.json`) turns the
+  reminder's text off; hub's live check confirms both. Hub still restates "no trailer, no
+  footer" in every signoff [ev:115; the porter confirmed the trailer case at ev:1379]. In
+  Corp's evidence the trailer rule lived only in Corp's hub project file
   (`~/omt-hub/CLAUDE.local.md:103`).
 - **Commit shape:** one commit per repo per order (WO-022 had two, one per repo), plus one per
   release. Body lists changes, `Closes #N` and follow-ups. 8a319d8 and dc2e76b had no
@@ -534,7 +540,7 @@ fixed (§3). Each node lists **owner**, **needs**, **makes**, and **seen in**.
   3. bump `package.json` + `package-lock.json` only;
   4. tsc and `npm test` exit 0;
   5. headless vsix build, no install;
-  6. one commit "release: x.y.z", no trailer;
+  6. one commit "release: x.y.z", no trailer; no generated-by or attribution footer on it or the release PR;
   7. PR to main;
   8. report sha, PR URL, vsix path and size, `git status`.
 - **After the PR:** the operator merges and installs. Hub confirms the installed version in
@@ -908,7 +914,7 @@ hub to read this doc (`$OMT_PLUGIN_DIR/docs/corp-mode-spec.md`), and the skills 
 | 10 | Gate-before-ask; escalate a stuck gate | Dev flow open/stuck-gate line; §0, §2.1 | **F** |
 | 11 | Push needs a tap; one tap covers commit + push | Dev flow tap line; §2.2 | **F** |
 | 12 | Fork only, never upstream | Dev flow "Fork only" line; §1.10, §1.11 | **F** |
-| 13 | No Co-Authored-By trailer | Dev flow "No trailer" line; §1.10 | **F** |
+| 13 | No Co-Authored-By trailer, no generated-by footer | Dev flow "No trailer, no footer" line; team agents' "Attribution"; §1.10 | **F** |
 | 14 | COMMIT_SIGNOFF template | §1.10; Dev flow COMMIT_SIGNOFF line | **F** |
 | 15 | Ledger shape and numbering | §4.3; Dev flow "Ledger" line | **F** |
 | 16 | Artifact paths | §4.4; Dev flow "Artifacts" line | **F** |
@@ -1236,6 +1242,7 @@ waits until the single-item flow has passed §7.
     plan; the launcher's shims; the symlink check before copying; the killed-lens definition;
   - §1.9: read-only observation of the other hub;
   - §1.10: `-R` on every `gh` call;
+  - §1.10: the paragraph's no-footer line;
   - §2.2: one tap covers commit, push and PR; ask again if the push set changed; removing the
     scoping session needs no new tap;
   - §3.2: one repo, one session at a time;
@@ -1245,6 +1252,11 @@ waits until the single-item flow has passed §7.
     turns;
   - §7.7: the lab's record path;
   - §7.9: the lab's result and the two limits.
+- 2026-10-09, #32 (LWO-002): §1.10, §1.12 step 6, §6 row 13: no trailer and no footer. The
+  operator's rule bans the "Generated with Claude Code" footer and any other generated-by or
+  attribution footer on commit messages, PR bodies, issues, comments and release notes; it
+  lives in `agents/hub.md` "Dev flow", every team agent's "Attribution" section and the lab
+  settings example `docs/omtv-settings.example.json`.
 
 ## Changes v2.3 → v2.4
 - §7.8 final: first run marked inflated; control arm stands; re-run without the key (A
