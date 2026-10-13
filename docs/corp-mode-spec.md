@@ -1,4 +1,4 @@
-# Corp mode spec — v2.4-lab.1 (AI.Lab copy)
+# Corp mode spec — v2.4-lab.2 (AI.Lab copy)
 
 AI.Lab copy for #25 (WO-027) of v2.4 (sha1 214952dc). Self-contained: §0a carries the
 flow-spec rules it relies on (flow spec v1.2.2, sha1 1cac472e), so the lab hub needs no
@@ -27,6 +27,83 @@ happened. Where practice and older rules disagree, §0 says which wins.
 - `[recipe]` is `corp/artifacts/wo026-audit/hub-auditor-recipe.md`, Corp's auditor recipe.
   The lab's procedure is `skills/plan-audit/` (§1.5).
 
+## Contents and reading map
+
+**Contents.** Every section and subsection of §0-§8 (§7 by its title only: its body is the
+answer key the spec arm must not see).
+- §0 Precedence
+- §0a Inherited rules
+- §1 Node types and their contracts
+  - §1.1 Issue
+  - §1.2 Scope
+  - §1.3 Restatement
+  - §1.4 Plan (v1, v2)
+  - §1.5 Plan audit
+  - §1.6 Implement
+  - §1.7 Review gate
+  - §1.8 Verification (team runs, hub re-runs)
+  - §1.9 Live check
+  - §1.10 Signoff and commit
+  - §1.11 PR and merge
+  - §1.12 Release (the extension, so far)
+  - §1.13 Close and housekeeping
+- §2 Gates
+  - §2.1 Gate table (rows are not in a fixed order; see §3.5 for live-first vs commit-first)
+  - §2.2 What needs an operator tap
+  - §2.3 What the push ask must say
+  - §2.4 What "verified" means
+- §3 Edges left free: the heuristics
+  - §3.1 Splitting and parallel work
+  - §3.2 Whether to scope, and who
+  - §3.3 Tier
+  - §3.4 Spikes and extra rounds
+  - §3.5 Order of gates, and the operator acting out of order
+  - §3.6 Team health: silence
+  - §3.7 Ruling Fix / Defer / Reject, and narrowing
+  - §3.8 Challenging evidence
+  - §3.9 In or out of scope
+  - §3.10 Designing a live check
+- §4 Protocols
+  - §4.1 Message shapes (quoted from the evidence)
+  - §4.2 Ask menus
+  - §4.3 Ledger: minimum shape (the WO-025 form, plus the lab's live-paths line)
+  - §4.4 Artifact locations (pinned)
+  - §4.5 Naming
+- §5 Tiering
+  - §5.1 The rule
+  - §5.2 Signals and examples
+- §6 Portability matrix
+- §7 Model-agnostic test (acceptance)
+- §8 Room left: work groups
+
+**Reading map.** At the start of every order read the glossary, these contents, §0a and §5,
+then the sections the current step names below, and the section behind any line that is
+unclear. A section a row names is read on its own; it does not pull in that section's row.
+A step not in the table: read the spec in full.
+Dev-flow names: plan v2 → §1.4; team runs and your re-run → §1.8; push tap → §2.2 and §2.3;
+COMMIT_SIGNOFF → §1.10; operator merge → §1.11; CLOSED → §1.13.
+
+| Step | Read |
+|---|---|
+| Order start | §4.3, `<vault>/lab/standing.md` |
+| §1.1 Issue | §1.1, §3.9, §4.3, §4.5 |
+| §1.2 Scope | §1.2, §3.2, §3.9, §4.2 |
+| §1.3 Restatement | §1.3, §3.6, §4.1, §5 |
+| §1.4 Plan (v1, v2) | §1.4, §0a, §3.4 |
+| §1.5 Plan audit | §1.5, §0, §3.7, §3.9, §4.1, §4.4 |
+| §1.6 Implement | §1.6, §0, §0a, §3.1, §3.6, §3.9 |
+| §1.7 Review gate | §1.7, §0, §1.5, §3.7, §3.8, §3.9 |
+| §1.8 Verification (team runs, hub re-runs) | §1.8, §0, §2.4, §3.8, §3.9, §4.1 |
+| §1.9 Live check | §1.9, §2.2, §3.5, §3.10, §4.2, §4.4 |
+| §1.10 Signoff and commit | §1.10, §0a, §1.8, §2.2, §2.3, §4.2 |
+| §1.11 PR and merge | §1.11, §2.2, §3.5, §4.2 |
+| §1.12 Release (the extension, so far) | §1.12, §1.10, §2.1, §2.2, §2.3, §4.1, §4.2, §4.3 |
+| §1.13 Close and housekeeping | §1.13, §4.3, §4.4 |
+| §2.1 Gate table (rows are not in a fixed order; see §3.5 for live-first vs commit-first) | §2.1, §0, §3.5 |
+| §2.2 What needs an operator tap | §2.2, §0a, §1.2, §1.5, §1.9, §3.3, §4.2, §5, §5.2 |
+| §2.3 What the push ask must say | §2.3, §2.4 |
+| §2.4 What "verified" means | §2.4, §1.8, §5 |
+
 ## Names and glossary
 
 - **Operator:** the human. Decides scope, taps approvals, merges.
@@ -54,7 +131,7 @@ happened. Where practice and older rules disagree, §0 says which wins.
 - **argos:** AI.Corp's watchdog. It restarts sessions it thinks are stuck.
 - **Order / LWO-NNN:** one unit of work with a ledger file. Lab orders are numbered LWO-001,
   LWO-002 and on (§4.3). Corp's orders (WO-018 to WO-027) appear here only as evidence.
-- **Ledger:** the order's append-only log file (§4.3).
+- **Ledger:** the order's log file (§4.3): a Now block, rewritten at every state change, above an append-only Log.
 - **Vault:** `<vault>` is
   `${OMT_VAULT_ROOT:-$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Bin4.me/omt}`.
   In Bash, set it in the same call:
@@ -196,7 +273,8 @@ Written at creation, before any code:
     too), except that `skills/plan-audit/run.sh` and its `briefs/` take effect at the lab hub's
     next audit launch;
   - `hooks/`, `.claude-plugin/`: at the next lab hub start (the plugin view copies them);
-  - `docs/corp-mode-spec.md`: at the lab hub's next order (it reads this doc at the start of each).
+  - `docs/corp-mode-spec.md`: at the hub's next read of that section (order start for the
+    glossary, contents, §0a and §5; each step for its mapped sections).
 
   Consequences, binding:
   - the ledger names the paths an order edits as LIVE DURING THE ORDER;
@@ -558,6 +636,10 @@ fixed (§3). Each node lists **owner**, **needs**, **makes**, and **seen in**.
   as reference only [ev:3808, ev:4577].
 - **Dev-log entry after a push:** Corp only (post-push vault prompt), not ported (slice 2)
   [WO-019 01:17Z].
+- **Context reset at CLOSED.** After writing CLOSED, the hub's status to the operator ends
+  with one line: "Context reset: run /clear in the hub session (or /compact with the Now block
+  as instructions); the next order starts from the ledgers and standing.md either way". The
+  hub goes on without waiting; the context hook (a later issue) will do the reset itself.
 
 ---
 
@@ -784,6 +866,7 @@ Hub reads the state first so nothing surprises. Case: "~/.omtv/hub-registry.json
   - numbered steps with the gates;
   - who drives the live check;
   - "No commit until COMMIT_SIGNOFF";
+  - "keep .sisyphus/now.md" (order, plan sha1, current step, blocked-on, next step);
   - "Ack first".
 
   Case: WO-025 [ev:3681]; S-tier case WO-024 [ev:3660].
@@ -819,11 +902,20 @@ Issue: <owner/repo>#N. Filed <date hh:mmZ> by hub on operator request; operator 
 Repo: <path> (<fork note>). Team: <session>. Scoping: <session or "none, because …">.
 Tier: <S|M|L> (<reason>). Must not: <lines>.
 Live during the order: <paths it edits under agents/, skills/, bin/, hooks/, channel/, .claude-plugin/, settings.json, docs/corp-mode-spec.md, or "none"> (§0a).
+## Now
+Order: "<the operator's words>". Tier: <S|M|L>. State: <NAME>.
+Waiting for: <what>, since <hh:mmZ>. Open asks: <token: question>, or "none".
+Pending taps: <what>, or "none". Next: <action>. Evidence: <paths>.
 ## Log
 - hh:mmZ <event, with numbers, sha1s, ask tokens, report paths>. State: <NAME>.
 …
 - hh:mmZ CLOSED. Commit <sha>, PR <repo>#N → <base>, merged <sha> by operator. Live: <result>. Follow-ups: <issues>.
 ```
+- **Now block:** at most 15 lines between the header and `## Log`, rewritten (not appended)
+  at every state change, so it always says where the order stands: the operator's order in
+  their words, tier, state, what hub waits for and since when, open asks with their tokens,
+  pending taps, the next action and where the evidence is. The Log below stays append-only.
+  An agent whose context was compacted or cleared resumes from the Now block, not from memory, then re-reads §0a and the current step's mapped sections.
 - **Numbering:** an LWO number is assigned when `<vault>/lab/tasks/LWO-NNN-<slug>.md` is
   created: the next after the highest existing file, from LWO-001. Ledger files are the only
   source. Never a Corp WO number. `mkdir -p "<vault>/lab/tasks"` for the first one. Corp's
@@ -838,6 +930,9 @@ Live during the order: <paths it edits under agents/, skills/, bin/, hooks/, cha
 | Frozen plans + audit reports | `<vault>/lab/artifacts/<lwo-nnn>-audit/` (`plan-v<N>.md`, `<LWO>-audit-r<N>-<lens>.md`, `prompt-<lens>.txt`). Corp's are in `corp/artifacts/`, where the older folders `wo-019-audit`, `wo021-audit`, `ext11-audit` keep their names |
 | Spike / DONE reports | `<vault>/lab/artifacts/<lwo-nnn>-<kind>.md` |
 | Live-run records | `~/.omt-scratch/lab-<team>/<run>/` (the `lab-` prefix keeps lab runs apart from Corp's) |
+| Standing rulings | `<vault>/lab/standing.md`: one line per ruling that outlives an order, ending with the order and time that made it, then a `## Open` list of pending proposals and follow-ups; hub appends after the operator's tap; a later line supersedes an earlier one by quoting it; hub reads it at the start of every order; it and the ledger's Now block are notes, never a tap, and relax no rule |
+| Team's current state | `<repo>/.sisyphus/now.md`: order, plan sha1, current step, blocked-on, next step; the team rewrites it at every step; never staged |
+| Context-size log | `~/.omt-scratch/lab-ctx/<session>-<inst>-<YYYYMMDD>[-<part>].jsonl`, one JSON line per turn and per compaction (`hooks/ctx-log.js`) |
 | Scoping text | the issue comment |
 
 ### 4.5 Naming
@@ -1155,7 +1250,7 @@ it used the preamble from before its fix and had no negative arm.
 - The lab hub itself runs fable (its `hubModel`). The §7 acceptance runs on sonnet because the
   claim (§7.1) is about a cheaper model.
 - The spec arm pastes this doc into the prompt, so it does not test the Dev flow's instruction
-  to read the spec in full.
+  to read the spec, neither in full (lab.1) nor by its reading map (lab.2).
 
 ---
 
@@ -1170,6 +1265,22 @@ shared data contract, run as one order with two sides. This spec doesn't design 
 waits until the single-item flow has passed §7.
 
 ---
+
+## Changes v2.4-lab.1 → v2.4-lab.2
+- 2026-10-13, #37 (LWO-007): deterministic context management, part 1 (spec and measure).
+  Contents and a step-to-section reading map before the glossary; the hub reads the glossary,
+  the contents, §0a, §5 and the mapped sections instead of the whole spec (`agents/hub.md`
+  "Dev flow"), and §0a's live-tree timing for this doc follows that read. Glossary and §4.3:
+  every ledger opens with a Now block, rewritten at every state change, above the append-only
+  Log; after a compaction or /clear an agent resumes from it. §4.4: `<vault>/lab/standing.md`,
+  the team's `.sisyphus/now.md` and the context-size log of `hooks/ctx-log.js`. §4.1: every
+  order asks for now.md. §1.13: at CLOSED the hub's status ends with the context-reset line.
+  §7.9: §7 never tested the reading map either.
+- Every new lab-only line in the body is guarded by a presence test
+  (test/fixtures/corp-mode-doc-additions.json); the contents and the map are guarded by
+  structure tests (every heading listed once; every §1/§2 node mapped with its full title and
+  the exact sections of test/fixtures/corp-mode-reading-map.json, including every section the
+  node cites).
 
 ## Changes v2.4 → v2.4-lab.1
 - The AI.Lab copy for #25 (WO-027), made from v2.4 (sha1 214952dc) and written from the lab

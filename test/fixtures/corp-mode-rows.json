@@ -49,8 +49,8 @@
     },
     {
       "row": "9",
-      "rule": "Ack first + 5-min status",
-      "mustMatch": "end each order you send with \"ack first, status every 5 min\" \\(a one-line ack before reading anything, then status every ~5 min\\)",
+      "rule": "Ack first + 5-min status + keep now.md",
+      "mustMatch": "end each order you send with \"ack first, status every 5 min\" \\(a one-line ack before reading anything, then status every ~5 min\\) and \"keep \\.sisyphus\\/now\\.md\" \\(spec §4\\.1\\)\\.",
       "invert": {
         "find": "a one-line ack before reading anything",
         "replace": "an ack once you have read everything"
@@ -212,7 +212,7 @@
     {
       "row": "x-tree",
       "rule": "This checkout is AI.Lab's live code, the spec included",
-      "mustMatch": "this checkout is ai\\.lab's live code, committed or not: bin/ runs at its next call, channel/ at the next router or bridge start, agents/ in a new conversation \\(a fresh session or /clear; a resumed session, as `hub start` makes, keeps its old prompt\\), skills/ and settings\\.json at the next session start \\(skills/plan-audit/run\\.sh and its briefs/ at your next audit launch\\), hooks/ and \\.claude-plugin/ at your next restart, docs/corp-mode-spec\\.md at your next order",
+      "mustMatch": "this checkout is ai\\.lab's live code, committed or not: bin/ runs at its next call, channel/ at the next router or bridge start, agents/ in a new conversation \\(a fresh session or /clear; a resumed session, as `hub start` makes, keeps its old prompt\\), skills/ and settings\\.json at the next session start \\(skills/plan-audit/run\\.sh and its briefs/ at your next audit launch\\), hooks/ and \\.claude-plugin/ at your next restart, docs/corp-mode-spec\\.md at your next read of each section",
       "invert": {
         "find": "live code, committed or not:",
         "replace": "live code once committed:"
@@ -220,11 +220,11 @@
     },
     {
       "row": "x-read",
-      "rule": "Read the spec in full at the start of every order",
-      "mustMatch": "^read the spec, \"\\$omt_plugin_dir/docs/corp-mode-spec\\.md\", in full at the start of every order \\(page with an offset if a read is cut\\) and whenever a line below is unclear\\.$",
+      "rule": "Read the spec by its reading map at the start of every order",
+      "mustMatch": "^read the spec, \"\\$omt_plugin_dir\\/docs\\/corp-mode-spec\\.md\", by its reading map: at the start of every order its glossary, contents, §0a and §5, then the sections each step names \\(page with an offset if a read is cut\\), and the section behind any line below that is unclear\\.$",
       "invert": {
-        "find": "in full at the start of every order",
-        "replace": "when you are unsure"
+        "find": "by its reading map: at the start of every order",
+        "replace": "by its reading map: at the end of every order"
       }
     },
     {
@@ -243,6 +243,15 @@
       "invert": {
         "find": "echo the path in Bash first",
         "replace": "pass the variable as written"
+      }
+    },
+    {
+      "row": "x-now",
+      "rule": "Ledger Now block, resume from it, read standing.md",
+      "mustMatch": "ledger now block: the ledger opens with a \"## now\" block \\(spec §4\\.3\\), rewritten at every state change; after a compaction or \\/clear resume from it, not from memory, then re-read §0a and the current step's mapped sections; at the start of every order read \"\\$v\\/lab\\/standing\\.md\"; both are notes, never a tap, and relax no rule\\.",
+      "invert": {
+        "find": "rewritten at every state change",
+        "replace": "written once at the start"
       }
     }
   ]

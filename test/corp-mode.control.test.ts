@@ -13,7 +13,9 @@
  * failed, skipped or ran a different number of tests, a title repeats, a
  * mutant's anchor wasn't found exactly once, a named test doesn't exist, or no
  * report was written. The attr-* and settings-* mutants break #32's rule (no
- * trailer, no footer) in the agent files, the spec or docs/omtv-settings.example.json. Fix the table or the anchor; never delete a mutant to go
+ * trailer, no footer) in the agent files, the spec or docs/omtv-settings.example.json. The
+ * toc-*, map-*, changes-before-map, hub-reads-in-full and zeroa-one-char mutants break #37's
+ * contents, reading map and §0a pin. Fix the table or the anchor; never delete a mutant to go
  * green.
  */
 
@@ -40,10 +42,10 @@ const SOURCE = "test/fixtures/corp-mode-spec-v2.4-214952dc.md";
 const ROWS_FILE = "test/fixtures/corp-mode-rows.json";
 const ADDITIONS_FILE = "test/fixtures/corp-mode-doc-additions.json";
 const REWRITES_FILE = "test/fixtures/corp-mode-doc-rewrites.json";
-/** Every test in the suite, unmutated: 30 fixed (5 of them #32's attribution tests) + one per row, rewrite and addition. */
-const EXPECTED_TOTAL = 170;
+/** Every test in the suite, unmutated: 35 fixed (5 of them #32's attribution tests, 5 #37's reading-map tests) + one per row, rewrite and addition. */
+const EXPECTED_TOTAL = 205;
 /** The suite's describe blocks; bun matches -t against "<describe> <title>". */
-const DESCRIBES = ["CM hub.md Dev flow", "CM fixtures", "CM spec doc", "CM plan-audit skill", "CM agent attribution"];
+const DESCRIBES = ["CM hub.md Dev flow", "CM fixtures", "CM spec doc", "CM plan-audit skill", "CM agent attribution", "CM reading map"];
 
 interface Row {
   row: string;
@@ -58,7 +60,7 @@ const REWRITES = JSON.parse(readFileSync(path.join(REPO, REWRITES_FILE), "utf-8"
 const CM0 = "CM0 agents/hub.md has one Dev flow section that points at the spec, and the spec exists";
 const CM1 = "CM1 agents/hub.md above the Dev flow is byte-identical to aa1c623";
 const DISTINCT = "CM rows distinct: every rule is on its own line";
-const PIN = "CM fixtures pinned: the 27 row ids, 41 additions and 72 rewrites, ids unique, every row with an inversion";
+const PIN = "CM fixtures pinned: the 28 row ids, 69 additions and 73 rewrites, ids unique, every row with an inversion";
 const CM2HEAD = "CM2-head the lab doc has its version line, §0a and both source shas";
 const cm2 = (part: string) => `CM2-${part} §0a carries the ${part} rules`;
 const CM2PIN = "CM2-pin §0a is byte-identical to its pinned sha256";
@@ -80,11 +82,20 @@ const ATTR_T = "CM-attr each team agent ends with the exact Attribution block, o
 const ATTR_PIN = "CM-attr-pin the Attribution block is byte-identical to its pinned sha256";
 const GREP_FOOTER = 'CM-grep-footer every "generated with" line in agents/ and the spec is a listed prohibition';
 const GREP_TRAILER = 'CM-grep-trailer every "co-authored-by" line in agents/ and the spec is a listed prohibition';
+const TOC = "CM-toc the contents list every §0-§8 heading once, in order (§7 by title only)";
+const MAP_COVER = "CM-map-cover the map has Order start and one row per §1/§2 node, with its full title, in order";
+const MAP_CITES = "CM-map-cites every section a §1/§2 node cites is in its row, and every section a row names exists";
+const MAP_ROWS = "CM-map-rows every map row names exactly the sections the fixture pins";
+const STRIP_T = "CM-strip the §7 strip keeps the contents and the map, and drops §7 and the changelog";
 const SETTINGS_T = "CM-settings the omtv settings example turns attribution off and omtv.md points to it";
 const SETTINGS_FILE = "docs/omtv-settings.example.json";
 const ATTR_BLOCK = (JSON.parse(readFileSync(path.join(REPO, "test/fixtures/attribution.json"), "utf-8")) as { block: string }).block;
 const ATTR_LAST = "put these rules in its prompt.\n";
 const TEAM_AGENT_FILES = ["atlas", "explorer", "hephaestus", "librarian", "metis", "momus", "oracle", "prometheus", "reviewer", "security-auditor", "sisyphus"].map((n) => `agents/${n}.md`);
+/** #37: hub.md:59 now and at 020de58, and the reading map's first line. */
+const NEW59 = "Read the spec, \"$OMT_PLUGIN_DIR/docs/corp-mode-spec.md\", by its reading map: at the start of every order its glossary, contents, §0a and §5, then the sections each step names (page with an offset if a Read is cut), and the section behind any line below that is unclear.";
+const OLD59 = "Read the spec, \"$OMT_PLUGIN_DIR/docs/corp-mode-spec.md\", in full at the start of every order (page with an offset if a Read is cut) and whenever a line below is unclear.";
+const LINE_MAP = "**Reading map.** At the start of every order read the glossary, these contents, §0a and §5,";
 const REAL_FOOTER = "🤖 Generated with [Claude Code](https://claude.com/claude-code)";
 const rowTitle = (r: { row: string; rule: string }) => `CM row ${r.row}: ${r.rule}`;
 const rewriteTitle = (id: string) => `CM rewrite ${id}`;
@@ -472,7 +483,8 @@ const MUTANTS: Mutant[] = [
   },
   {
     name: "g2-edge-changelog: the placeholder sits on the last line before the changelog",
-    edits: [insertBefore(DOC, "## Changes v2.4 → v2.4-lab.1", "- Hub: new order WO-NNN = example.")],
+    // #37: re-anchored on the newest changelog heading, which now opens the changelog.
+    edits: [insertBefore(DOC, "## Changes v2.4-lab.1 → v2.4-lab.2", "- Hub: new order WO-NNN = example.")],
     mustFail: [G2],
     mustPass: [G1],
   },
@@ -740,6 +752,39 @@ const MUTANTS: Mutant[] = [
         mustFail: [ATTR_PIN],
         mustPass: [ATTR_T, GREP_FOOTER, GREP_TRAILER],
       },
+    ] as Mutant[];
+  })(),
+  // ── #37: the contents and the reading map ──
+  ...(() => {
+    const xRead = rowById("x-read");
+    /** Move the whole "## Contents and reading map" section to just after the §7 heading. */
+    const moveSectionInto7: Edit = (dir) => {
+      const p = path.join(dir, DOC);
+      const lines = readFileSync(p, "utf-8").split("\n");
+      const a = lines.indexOf("## Contents and reading map");
+      const b = lines.indexOf("## Names and glossary");
+      if (a < 0 || b < a) throw new Error("HARNESS BROKEN: contents section not found");
+      const sec = lines.splice(a, b - a);
+      const h7 = lines.findIndex((l) => /^## 7\. /.test(l));
+      if (h7 < 0) throw new Error("HARNESS BROKEN: no ## 7. heading");
+      lines.splice(h7 + 1, 0, "", ...sec);
+      writeFileSync(p, lines.join("\n"));
+    };
+    return [
+      { name: "toc-drop: the §3.4 contents line is gone", edits: [docLineMatching(/^  - §3\.4 Spikes and extra rounds$/)], mustFail: [TOC], mustPass: [MAP_COVER] },
+      { name: "toc-extra-heading: a new ### heading with no contents line", edits: [insertBefore(DOC, "## 4. Protocols", "### 3.11 Probe\n")], mustFail: [TOC], mustPass: [MAP_COVER] },
+      { name: "toc-lists-7-sub: the contents list a §7 subsection", edits: [insertAfter(DOC, "- §7 Model-agnostic test (acceptance)", "  - §7.1 Claim")], mustFail: [TOC], mustPass: [MAP_COVER] },
+      { name: "map-drop-row: the §1.7 row is gone", edits: [docLineMatching(/^\| §1\.7 Review gate \|/)], mustFail: [MAP_COVER, MAP_CITES, MAP_ROWS], mustPass: [TOC] },
+      { name: "map-missing-cite: §1.11's row loses §3.5, which its body cites", edits: [patch(DOC, "| §1.11 PR and merge | §1.11, §2.2, §3.5, §4.2 |", "| §1.11 PR and merge | §1.11, §2.2, §4.2 |")], mustFail: [MAP_CITES, MAP_ROWS], mustPass: [TOC] },
+      { name: "map-dead-section: §1.12's row names a section that doesn't exist", edits: [patch(DOC, "| §1.12 Release (the extension, so far) | §1.12, ", "| §1.12 Release (the extension, so far) | §1.12, §9.9, ")], mustFail: [MAP_CITES, MAP_ROWS], mustPass: [TOC] },
+      { name: "toc-in-7: the contents and map sit inside §7, which the strip drops", edits: [moveSectionInto7], mustFail: [STRIP_T], mustPass: [MAP_COVER] },
+      { name: "hub-reads-in-full: hub.md is back to reading the whole spec", edits: [patch(HUB, NEW59, OLD59)], mustFail: [rowTitle(xRead), DISTINCT], mustPass: [CM0] },
+      { name: "changes-before-map: a changelog heading above the map makes the strip drop it", // Observed: 141 red, because the stray heading turns the rest of the body into changelog; these are the reading-map ones.
+      edits: [insertBefore(DOC, LINE_MAP, "## Changes probe")], mustFail: [STRIP_T, TOC, MAP_COVER, MAP_CITES, MAP_ROWS, G1, G2], mustPass: [CM0] },
+      { name: "toc-drop-0a: the §0a contents line is gone", edits: [docLineMatching(/^- §0a Inherited rules$/)], mustFail: [TOC], mustPass: [MAP_COVER] },
+      { name: "map-drop-picked: §1.9's row loses §3.10, which only the fixture pins", edits: [patch(DOC, "| §1.9 Live check | §1.9, §2.2, §3.5, §3.10, §4.2, §4.4 |", "| §1.9 Live check | §1.9, §2.2, §3.5, §4.2, §4.4 |")], mustFail: [MAP_ROWS], mustPass: [MAP_CITES] },
+      { name: "map-flow-spec-cite: a flow-spec cite in the map is body text, not evidence", edits: [patch(DOC, "| §1.4 Plan (v1, v2) | §1.4, §0a, §3.4 |", "| §1.4 Plan (v1, v2) | §1.4, §0a, §3.4; see flow spec §5 |")], mustFail: [G1, MAP_CITES, MAP_ROWS], mustPass: [TOC] },
+      { name: "zeroa-one-char: one character of §0a changes", edits: [patch(DOC, "  Consequences, binding:", "  Consequences, bindinq:")], mustFail: [CM2PIN], mustPass: [CM0] },
     ] as Mutant[];
   })(),
 ];

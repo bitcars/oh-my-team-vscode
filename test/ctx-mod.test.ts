@@ -9,9 +9,11 @@
  * bun test below. The runs happen at module load because bun cannot register
  * tests from beforeAll.
  *
- * The plugin's real hooks/hooks.json and status-hook.sh go into the temp
- * plugin too, so validate checks the file that ships the feature (its
- * `modules` line), not a stand-in.
+ * The plugin's real hooks/hooks.json, hooks/mods.js (its one hooks module,
+ * which registers ctx-mod and ctx-log, #37) and status-hook.sh go into the kit
+ * plugin too, so the kit loads the mod the way the plugin ships it. Validate
+ * runs on a second temp plugin with ctx-mod.js as its only module, because on
+ * the aggregator validate prints mods.js's lines with both mods merged.
  *
  * The mod is read from ../hooks relative to THIS file, so the removal control
  * (ctx-mod.control.test.ts) can run a copy of this file against a patched copy
@@ -75,6 +77,8 @@ const CALLS = ["$.agent.list", "$.clock.sleep", "$.env.get", "$.http.fetch", "$.
 // ── Build the temp plugin and run the kit (module load) ────────────────────
 
 const plugin = mkdtempSync(path.join(realpathSync("/tmp"), "omt-ctx-mod-kit-"));
+/** ctx-mod alone as its one module, so validate prints ctx-mod's own lines (#37: hooks.json loads mods.js). */
+const validatePlugin = mkdtempSync(path.join(realpathSync("/tmp"), "omt-ctx-mod-val-"));
 let broken: string | null = null;
 let kit: PluginRun | null = null;
 let validate: PluginRun | null = null;
@@ -84,17 +88,21 @@ try {
     path.join(plugin, ".claude-plugin", "plugin.json"),
     JSON.stringify({ name: "ctx-mod-kit", version: "0.0.0", description: "ctx-mod kit run", author: { name: "oh-my-team" } })
   );
-  for (const f of ["hooks.json", "status-hook.sh"]) copyFileSync(path.join(HOOKS_DIR, f), path.join(plugin, "hooks", f));
+  for (const f of ["hooks.json", "status-hook.sh", "mods.js", "ctx-log.js"]) copyFileSync(path.join(HOOKS_DIR, f), path.join(plugin, "hooks", f));
   copyFileSync(MOD, path.join(plugin, "hooks", "ctx-mod.js"));
   copyFileSync(KIT, path.join(plugin, "tests", "ctx-mod.test.ts"));
+  for (const d of [".claude-plugin", "hooks"]) mkdirSync(path.join(validatePlugin, d));
+  copyFileSync(path.join(plugin, ".claude-plugin", "plugin.json"), path.join(validatePlugin, ".claude-plugin", "plugin.json"));
+  copyFileSync(MOD, path.join(validatePlugin, "hooks", "ctx-mod.js"));
+  writeFileSync(path.join(validatePlugin, "hooks", "hooks.json"), JSON.stringify({ modules: ["./ctx-mod.js"] }));
   kit = runClaudePluginSandboxed("test", plugin);
-  validate = runClaudePluginSandboxed("validate", plugin);
+  validate = runClaudePluginSandboxed("validate", validatePlugin);
 } catch (err) {
   broken = String(err);
 }
 
 afterAll(() => {
-  for (const d of [plugin, kit?.sandbox, validate?.sandbox]) if (d) rmSync(d, { recursive: true, force: true });
+  for (const d of [plugin, validatePlugin, kit?.sandbox, validate?.sandbox]) if (d) rmSync(d, { recursive: true, force: true });
 });
 
 /** Kit result per title: "pass", or the failure text the kit printed under it. */

@@ -3,7 +3,7 @@
     "id": "r1",
     "line": 1,
     "gone": "# Corp mode spec — v2.4\n",
-    "present": "^# Corp mode spec — v2\\.4-lab\\.1 \\(AI\\.Lab copy\\)$"
+    "present": "^# Corp mode spec — v2\\.4-lab\\.2 \\(AI\\.Lab copy\\)$"
   },
   {
     "id": "r3",
@@ -46,6 +46,12 @@
     "line": 37,
     "gone": "**Order / WO-NNN:**",
     "present": "^- \\*\\*Order / LWO-NNN:\\*\\* one unit of work with a ledger file\\."
+  },
+  {
+    "id": "r-gloss-ledger",
+    "line": 38,
+    "gone": "- **Ledger:** the order's append-only log file (§4.3).\n",
+    "present": "^- \\*\\*Ledger:\\*\\* the order's log file \\(§4\\.3\\): a Now block, rewritten at every state change, above an append-only Log\\.$"
   },
   {
     "id": "r62",

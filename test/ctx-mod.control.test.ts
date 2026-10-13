@@ -21,7 +21,7 @@ import path from "node:path";
 setDefaultTimeout(120_000);
 
 const REPO = path.resolve(import.meta.dir, "..");
-const COPY = ["hooks/ctx-mod.js", "hooks/hooks.json", "hooks/status-hook.sh", "test/ctx-mod.test.ts", "test/mods/ctx-mod.cc-test.ts", "test/omt-harness.ts"];
+const COPY = ["hooks/ctx-mod.js", "hooks/ctx-log.js", "hooks/mods.js", "hooks/hooks.json", "hooks/status-hook.sh", "test/ctx-mod.test.ts", "test/mods/ctx-mod.cc-test.ts", "test/omt-harness.ts"];
 const MOD = "hooks/ctx-mod.js";
 const WRAPPER = "test/ctx-mod.test.ts";
 
@@ -357,9 +357,17 @@ const MUTANTS: Mutant[] = [
   {
     name: "hooks-json-no-modules: the real hooks.json doesn't load the mod",
     file: "hooks/hooks.json",
-    patches: [["  \"modules\": [\"./ctx-mod.js\"],\n", ""]],
-    mustFail: [M2, VALIDATE],
-    mustPass: [SANDBOX],
+    // #37: hooks.json loads mods.js now; validate checks ctx-mod alone, so only the kit sees this.
+    patches: [["  \"modules\": [\"./mods.js\"],\n", ""]],
+    mustFail: [M2],
+    mustPass: [SANDBOX, VALIDATE],
+  },
+  {
+    name: "mods-js-without-ctx-mod: mods.js no longer registers ctx-mod",
+    file: "hooks/mods.js",
+    patches: [["  registerCtxMod(on)\n", ""]],
+    mustFail: [M2],
+    mustPass: [SANDBOX, VALIDATE],
   },
   {
     name: "warn-on-404: the expected startup 404 uses up the one warning",
