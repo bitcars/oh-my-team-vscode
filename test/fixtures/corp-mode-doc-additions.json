@@ -37,7 +37,7 @@
   {
     "id": "a-docs-live",
     "where": "§0a",
-    "present": "^  - `docs/corp-mode-spec\\.md`: at the lab hub's next order \\(it reads this doc at the start of each\\)\\.$"
+    "present": "^  - `docs\\/corp-mode-spec\\.md`: at the hub's next read of that section \\(order start for the$"
   },
   {
     "id": "a-tamper-lab",
@@ -203,5 +203,145 @@
     "id": "a-77-lab",
     "where": "§7.7",
     "present": "^   \\(§4\\.4\\): on AI\\.Lab `<vault>/lab/artifacts/<lwo-nnn>-agnostic-test/`; for a Corp-run order,$"
+  },
+  {
+    "id": "a-toc-head",
+    "where": "contents",
+    "present": "^## Contents and reading map$"
+  },
+  {
+    "id": "a-toc-intro-1",
+    "where": "contents",
+    "present": "^\\*\\*Contents\\.\\*\\* Every section and subsection of §0-§8 \\(§7 by its title only: its body is the$"
+  },
+  {
+    "id": "a-toc-intro-2",
+    "where": "contents",
+    "present": "^answer key the spec arm must not see\\)\\.$"
+  },
+  {
+    "id": "a-map-rule-1",
+    "where": "reading map",
+    "present": "^\\*\\*Reading map\\.\\*\\* At the start of every order read the glossary, these contents, §0a and §5,$"
+  },
+  {
+    "id": "a-map-rule-2",
+    "where": "reading map",
+    "present": "^then the sections the current step names below, and the section behind any line that is$"
+  },
+  {
+    "id": "a-map-rule-3",
+    "where": "reading map",
+    "present": "^unclear\\. A section a row names is read on its own; it does not pull in that section's row\\.$"
+  },
+  {
+    "id": "a-map-rule-4",
+    "where": "reading map",
+    "present": "^A step not in the table: read the spec in full\\.$"
+  },
+  {
+    "id": "a-map-alias-1",
+    "where": "reading map",
+    "present": "^Dev-flow names: plan v2 → §1\\.4; team runs and your re-run → §1\\.8; push tap → §2\\.2 and §2\\.3;$"
+  },
+  {
+    "id": "a-map-alias-2",
+    "where": "reading map",
+    "present": "^COMMIT_SIGNOFF → §1\\.10; operator merge → §1\\.11; CLOSED → §1\\.13\\.$"
+  },
+  {
+    "id": "a-docs-live-2",
+    "where": "§0a",
+    "present": "^    glossary, contents, §0a and §5; each step for its mapped sections\\)\\.$"
+  },
+  {
+    "id": "a-113-1",
+    "where": "§1.13",
+    "present": "^- \\*\\*Context reset at CLOSED\\.\\*\\* After writing CLOSED, the hub's status to the operator ends$"
+  },
+  {
+    "id": "a-113-2",
+    "where": "§1.13",
+    "present": "^  with one line: \"Context reset: run \\/clear in the hub session \\(or \\/compact with the Now block$"
+  },
+  {
+    "id": "a-113-3",
+    "where": "§1.13",
+    "present": "^  as instructions\\); the next order starts from the ledgers and standing\\.md either way\"\\. The$"
+  },
+  {
+    "id": "a-113-4",
+    "where": "§1.13",
+    "present": "^  hub goes on without waiting; the context hook \\(a later issue\\) will do the reset itself\\.$"
+  },
+  {
+    "id": "a-41-now",
+    "where": "§4.1",
+    "present": "^  - \"keep \\.sisyphus\\/now\\.md\" \\(order, plan sha1, current step, blocked-on, next step\\);$"
+  },
+  {
+    "id": "a-43-now-head",
+    "where": "§4.3",
+    "present": "^## Now$"
+  },
+  {
+    "id": "a-43-now-1",
+    "where": "§4.3",
+    "present": "^Order: \"<the operator's words>\"\\. Tier: <S\\|M\\|L>\\. State: <NAME>\\.$"
+  },
+  {
+    "id": "a-43-now-2",
+    "where": "§4.3",
+    "present": "^Waiting for: <what>, since <hh:mmZ>\\. Open asks: <token: question>, or \"none\"\\.$"
+  },
+  {
+    "id": "a-43-now-3",
+    "where": "§4.3",
+    "present": "^Pending taps: <what>, or \"none\"\\. Next: <action>\\. Evidence: <paths>\\.$"
+  },
+  {
+    "id": "a-43-rule-1",
+    "where": "§4.3",
+    "present": "^- \\*\\*Now block:\\*\\* at most 15 lines between the header and `## Log`, rewritten \\(not appended\\)$"
+  },
+  {
+    "id": "a-43-rule-2",
+    "where": "§4.3",
+    "present": "^  at every state change, so it always says where the order stands: the operator's order in$"
+  },
+  {
+    "id": "a-43-rule-3",
+    "where": "§4.3",
+    "present": "^  their words, tier, state, what hub waits for and since when, open asks with their tokens,$"
+  },
+  {
+    "id": "a-43-rule-4",
+    "where": "§4.3",
+    "present": "^  pending taps, the next action and where the evidence is\\. The Log below stays append-only\\.$"
+  },
+  {
+    "id": "a-43-rule-5",
+    "where": "§4.3",
+    "present": "^  An agent whose context was compacted or cleared resumes from the Now block, not from memory, then re-reads §0a and the current step's mapped sections\\.$"
+  },
+  {
+    "id": "a-44-standing",
+    "where": "§4.4",
+    "present": "^\\| Standing rulings \\| `<vault>\\/lab\\/standing\\.md`: one line per ruling that outlives an order, ending with the order and time that made it, then a `## Open` list of pending proposals and follow-ups; hub appends after the operator's tap; a later line supersedes an earlier one by quoting it; hub reads it at the start of every order; it and the ledger's Now block are notes, never a tap, and relax no rule \\|$"
+  },
+  {
+    "id": "a-44-now",
+    "where": "§4.4",
+    "present": "^\\| Team's current state \\| `<repo>\\/\\.sisyphus\\/now\\.md`: order, plan sha1, current step, blocked-on, next step; the team rewrites it at every step; never staged \\|$"
+  },
+  {
+    "id": "a-44-ctxlog",
+    "where": "§4.4",
+    "present": "^\\| Context-size log \\| `~\\/\\.omt-scratch\\/lab-ctx\\/<session>-<inst>-<YYYYMMDD>\\[-<part>\\]\\.jsonl`, one JSON line per turn and per compaction \\(`hooks\\/ctx-log\\.js`\\) \\|$"
+  },
+  {
+    "id": "a-79-selective",
+    "where": "§7.9",
+    "present": "^  to read the spec, neither in full \\(lab\\.1\\) nor by its reading map \\(lab\\.2\\)\\.$"
   }
 ]

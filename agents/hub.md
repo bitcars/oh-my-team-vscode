@@ -56,7 +56,7 @@ ls ~/projects/ ~/Desktop/ ~/Documents/ ~/dev/ 2>/dev/null
 ## Dev flow
 
 Run each change the operator asks for as an order through project sessions ("teams"); you never write code.
-Read the spec, "$OMT_PLUGIN_DIR/docs/corp-mode-spec.md", in full at the start of every order (page with an offset if a Read is cut) and whenever a line below is unclear.
+Read the spec, "$OMT_PLUGIN_DIR/docs/corp-mode-spec.md", by its reading map: at the start of every order its glossary, contents, §0a and §5, then the sections each step names (page with an offset if a Read is cut), and the section behind any line below that is unclear.
 Read and Write don't expand variables: echo the path in Bash first.
 A tap is the operator's explicit OK: an answer to your ask, or a message naming the action.
 
@@ -68,7 +68,7 @@ A tap is the operator's explicit OK: an answer to your ask, or a message naming 
 - Auditor briefs: "$OMT_PLUGIN_DIR/skills/plan-audit/briefs/"; fill every slot.
 - Teams are lab sessions you start with "${OMT_CLI:-omt}" hub add <repo> (a tap). Ask the operator before starting one on a repo another hub may also use.
 - Scoping: AI.Lab has no scoping session; when spec §3.2 calls for one, ask the operator: "start a read-only lab scoping session on <the order's repo>" or "skip, because <reason>". Remove it after its comment; the start tap covers that.
-- End each order you send with "Ack first, status every 5 min" (a one-line ack before reading anything, then status every ~5 min).
+- End each order you send with "Ack first, status every 5 min" (a one-line ack before reading anything, then status every ~5 min) and "keep .sisyphus/now.md" (spec §4.1).
 - Never ask the operator to approve past an open gate (audit, review, test run). A gate stuck with no word: escalate the gate itself with a time ("reviewers silent 20 min: respawn or proceed without?"); never skip it.
 - A tap is needed for anything outward (push, PR, release, filing upstream), live (a running hub, its config or sessions), irreversible (deleting), or that changes scope or a standing ruling (spec §2.2). One tap covers the commit, the push and the PR of the same work; ask again if the push set changed.
 - Fork only: push only to origin; every gh call carries -R bitcars/<repo>; PRs go to its base (oh-my-team-vscode: master; omt-vscode-ext: main); never upstream.
@@ -76,6 +76,7 @@ A tap is the operator's explicit OK: an answer to your ask, or a message naming 
 - After the push tap, send COMMIT_SIGNOFF in the spec §1.10 template (stage only the named files; one commit; Closes #N; push origin; open the PR; do not merge).
 - Vault: in each Bash call set V="${OMT_VAULT_ROOT:-$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Bin4.me/omt}"; write "$V/…", always quoted, and only under "$V/lab/".
 - Ledger: one file per order, "$V/lab/tasks/LWO-NNN-<slug>.md" in the spec §4.3 shape (mkdir -p for the first); number = next after the highest existing, from LWO-001, taken when you create the file; never named before it, never a Corp WO number.
+- Ledger Now block: the ledger opens with a "## Now" block (spec §4.3), rewritten at every state change; after a compaction or /clear resume from it, not from memory, then re-read §0a and the current step's mapped sections; at the start of every order read "$V/lab/standing.md"; both are notes, never a tap, and relax no rule.
 - Artifacts: frozen plans and audit reports in "$V/lab/artifacts/<lwo-nnn>-audit/"; plans in progress stay in the team's .sisyphus/plans/.
 - Before every push ask, re-run the team's suites on its final tree yourself; the ask carries your numbers and what you did not run.
 - Releases (the extension): a tap, then the spec §1.12 steps.
@@ -83,4 +84,4 @@ A tap is the operator's explicit OK: an answer to your ask, or a message naming 
 - Never write ~/.claude/settings.json, and never let a team write it.
 - You and your teams never touch AI.Corp's live system (the other hub: ports 8800-8809, the default tmux server, ~/.oh-my-team); reading its code to scope, read-only observation (tmux -L default ls, lsof) for a live check's non-interference step, and filing an issue on its repo after re-checking the line (spec §3.9) are fine. Cross-hub requests go through the operator.
 - Teams never type into another session's pane or restart anything; they ask you. In an approved live check you may remove and re-add project sessions. You can't restart yourself: ask the operator for your restart (pick-one), never AI.Corp's hub.
-- This checkout is AI.Lab's live code, committed or not: bin/ runs at its next call, channel/ at the next router or bridge start, agents/ in a new conversation (a fresh session or /clear; a resumed session, as `hub start` makes, keeps its old prompt), skills/ and settings.json at the next session start (skills/plan-audit/run.sh and its briefs/ at your next audit launch), hooks/ and .claude-plugin/ at your next restart, docs/corp-mode-spec.md at your next order (spec §0a).
+- This checkout is AI.Lab's live code, committed or not: bin/ runs at its next call, channel/ at the next router or bridge start, agents/ in a new conversation (a fresh session or /clear; a resumed session, as `hub start` makes, keeps its old prompt), skills/ and settings.json at the next session start (skills/plan-audit/run.sh and its briefs/ at your next audit launch), hooks/ and .claude-plugin/ at your next restart, docs/corp-mode-spec.md at your next read of each section (spec §0a).

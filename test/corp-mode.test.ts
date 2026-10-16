@@ -14,7 +14,8 @@
  * claude session or touches a live hub; CM3-omt-profile only reads the shas of
  * the lab's CLI and registry. CM-attr, CM-attr-pin, CM-grep-* and CM-settings check the
  * no-trailer/no-footer rule (#32) in every agents/*.md, the spec and the omtv
- * settings example (fixtures/attribution.json). test/corp-mode.control.test.ts re-runs
+ * settings example (fixtures/attribution.json). CM-toc, CM-map-* and CM-strip
+ * check the spec's contents and reading map (#37, fixtures/corp-mode-reading-map.json). test/corp-mode.control.test.ts re-runs
  * these against mutated copies and names them by title, so keep titles unique
  * and stable.
  */
@@ -35,18 +36,19 @@ const FIX = path.join(CHECKOUT, "test", "fixtures");
 const SOURCE = path.join(FIX, "corp-mode-spec-v2.4-214952dc.md");
 const SOURCE_SHA1 = "214952dc19a46b4aa5832318f3e7fa7768744bed";
 const SOURCE_LINES = 975;
-const DOC_TITLE = "# Corp mode spec — v2.4-lab.1 (AI.Lab copy)";
+const DOC_TITLE = "# Corp mode spec — v2.4-lab.2 (AI.Lab copy)";
 
 /** The Dev flow rows (plan v2 §4 plus the review fix round), pinned by id: a dropped row is a dropped rule. */
-const ROW_IDS = ["1", "2", "3", "4", "5", "9", "10", "11", "12", "13", "14", "15", "16", "17", "29", "x-waiver", "x-teams", "x-scoping", "x-vault", "x-cli", "x-settings", "x-corp", "x-live", "x-tree", "x-read", "x-tap", "x-echo"];
-const ADDITION_COUNT = 41;
-const REWRITE_COUNT = 72;
+const ROW_IDS = ["1", "2", "3", "4", "5", "9", "10", "11", "12", "13", "14", "15", "16", "17", "29", "x-waiver", "x-teams", "x-scoping", "x-vault", "x-cli", "x-settings", "x-corp", "x-live", "x-tree", "x-read", "x-tap", "x-echo", "x-now"];
+const ADDITION_COUNT = 69;
+const REWRITE_COUNT = 73;
 /**
  * sha256 pins (WO-027 review round 2, M-A): the keyword checks in CM2 and CM4
  * say why each part matters, but an inverted rule keeps its keywords, so the
  * text itself is pinned. A deliberate edit updates the pin in the same change.
  */
-const ZERO_A_SHA256 = "e4edd367c054e6e5f8bde1098e36c860e0f59f079ac551d10084de0e31ba538e";
+// LWO-007 (#37) moved it on purpose: §0a's live-tree timing for this doc follows the reading map (was e4edd367…).
+const ZERO_A_SHA256 = "4fed1f7999d2b58a02162c8dd6dfd93932e4f009be09996b31184a7d9fef94d3";
 const CAUTION_SHA256 = "56830a2161704845ab0f09a83666c2bf12c3233b3f60e55778a89a5879c46203";
 /** #32: the team agents' Attribution block (test/fixtures/attribution.json `block`); CM-attr compares the agents with the fixture, this pins the fixture. */
 const ATTR_BLOCK_SHA256 = "d4f3619d0848acce6a690f5475261881f2a870c605d5b2be172db08e89e20deb";
@@ -118,7 +120,9 @@ function bodyHits(doc: string, re: RegExp): { hits: number[]; changes: number } 
 function evidenceMap(text: string): boolean[] {
   const lines = text.split("\n");
   const srcStart = lines.findIndex((l) => l.startsWith("**Sources and cite marks"));
-  const srcEnd = lines.findIndex((l) => l.startsWith("## Names and glossary"));
+  if (srcStart < 0) throw new Error("evidence regions not found");
+  // The sources block ends at the next heading (#37: the contents and reading map follow it and are body, not evidence).
+  const srcEnd = lines.findIndex((l, i) => i > srcStart && /^## /.test(l));
   const p0 = lines.findIndex((l) => l.startsWith("## 0. Precedence"));
   const p0End = lines.findIndex((l, i) => i > p0 && /^## /.test(l));
   const changes = lines.findIndex((l) => l.startsWith("## Changes "));
@@ -237,7 +241,7 @@ describe("CM hub.md Dev flow", () => {
 // ── fixture pins ──────────────────────────────────────────────────────────
 
 describe("CM fixtures", () => {
-  test("CM fixtures pinned: the 27 row ids, 41 additions and 72 rewrites, ids unique, every row with an inversion", () => {
+  test("CM fixtures pinned: the 28 row ids, 69 additions and 73 rewrites, ids unique, every row with an inversion", () => {
     const ids = ROWS_FIX.rows.map((r) => r.row);
     expect(ids).toEqual(ROW_IDS);
     expect(ROWS_FIX.rows.filter((r) => !(typeof r.invert?.find === "string" && r.invert.find && typeof r.invert.replace === "string")).map((r) => r.row)).toEqual([]);
@@ -1024,5 +1028,125 @@ describe("CM agent attribution", () => {
     const a = (j as { attribution?: { commit?: unknown; pr?: unknown; sessionUrl?: unknown } }).attribution;
     expect({ commit: typeof a?.commit, pr: typeof a?.pr, sessionUrl: typeof a?.sessionUrl, values: [a?.commit, a?.pr, a?.sessionUrl] }).toEqual({ commit: "string", pr: "string", sessionUrl: "boolean", values: ["", "", false] });
     expect(read(path.join(CHECKOUT, "docs", "omtv.md")).split("\n").filter((l) => l === ATTR.omtvLine).length).toBe(1);
+  });
+});
+
+// ── #37: the spec's contents and reading map ─────────────────────────────
+
+const MAP_FIX = JSON.parse(readFileSync(path.join(FIX, "corp-mode-reading-map.json"), "utf-8")) as { step: string; read: string[] }[];
+const H2 = /^## (\d+a?)\. (.*)$/;
+const H3 = /^### (\d+\.\d+) (.*)$/;
+const CITE = /§(\d+[a-z]?(?:\.\d+)?)/g;
+const STRIP = "/^## 7\\. /{s=1} /^## 8\\. /{s=0} /^## Changes /{s=1} !s";
+
+/** Headings of §0-§8 outside fences, in order, stopping at the first changelog heading. */
+function specHeadings(doc: string): { level: 2 | 3; n: string; title: string; line: number }[] {
+  const out: { level: 2 | 3; n: string; title: string; line: number }[] = [];
+  const fl = fenced(doc);
+  for (let i = 0; i < fl.length; i++) {
+    const { line, inFence } = fl[i];
+    if (inFence) continue;
+    if (line.startsWith("## Changes ")) break;
+    const a = line.match(H2);
+    if (a) out.push({ level: 2, n: a[1], title: a[2], line: i });
+    const b = line.match(H3);
+    if (b) out.push({ level: 3, n: b[1], title: b[2], line: i });
+  }
+  return out;
+}
+
+/** The lines of the contents list: after the **Contents.** sentence, up to **Reading map.** */
+function tocLines(doc: string): string[] {
+  const lines = doc.split("\n");
+  const a = lines.findIndex((l) => l.startsWith("**Contents.**"));
+  const b = lines.findIndex((l) => l.startsWith("**Reading map.**"));
+  if (a < 0 || b < a) return [];
+  return lines.slice(a + 2, b);
+}
+
+/** The reading-map table rows under ## Contents and reading map: [step, sections]. */
+function mapRows(doc: string): { step: string; read: string[] }[] {
+  const sec = section(doc, /^## Contents and reading map$/) ?? [];
+  const head = sec.findIndex((l) => l === "| Step | Read |");
+  if (head < 0) return [];
+  const rows: { step: string; read: string[] }[] = [];
+  for (const l of sec.slice(head + 2)) {
+    if (!l.startsWith("| ")) break;
+    const cells = l.split(" | ");
+    rows.push({ step: cells[0].slice(2), read: cells.slice(1).join(" | ").replace(/ \|$/, "").split(", ") });
+  }
+  return rows;
+}
+
+/** Non-provenance § cites in a node's body (flow-spec cites and "(provenance: …)" excluded). */
+function bodyCites(lines: string[]): string[] {
+  const text = lines.join("\n").replace(/\(provenance:[^)]*\)/g, "").replace(/flow[\s-]+spec(?:\s+v[\d.]+)?\s+§\d+[a-z]?(?:\.\d+)?(?:,\s*§\d+[a-z]?(?:\.\d+)?)*/gi, "");
+  return [...new Set([...text.matchAll(CITE)].map((m) => m[1]))];
+}
+
+describe("CM reading map", () => {
+  test("CM-toc the contents list every §0-§8 heading once, in order (§7 by title only)", () => {
+    const doc = read(DOC);
+    const want: string[] = [];
+    let in7 = false;
+    for (const h of specHeadings(doc)) {
+      if (h.level === 2) {
+        in7 = h.n === "7";
+        want.push(`- §${h.n} ${h.title}`);
+      } else if (!in7) want.push(`  - §${h.n} ${h.title}`);
+    }
+    expect(want.length).toBeGreaterThan(40);
+    expect(tocLines(doc)).toEqual([...want, ""]);
+  });
+
+  test("CM-map-cover the map has Order start and one row per §1/§2 node, with its full title, in order", () => {
+    const doc = read(DOC);
+    const nodes = specHeadings(doc).filter((h) => h.level === 3 && /^[12]\./.test(h.n)).map((h) => `§${h.n} ${h.title}`);
+    expect(nodes.length).toBe(17);
+    expect(mapRows(doc).map((r) => r.step)).toEqual(["Order start", ...nodes]);
+  });
+
+  test("CM-map-cites every section a §1/§2 node cites is in its row, and every section a row names exists", () => {
+    const doc = read(DOC);
+    const hs = specHeadings(doc);
+    const known = new Set(hs.map((h) => h.n));
+    const rows = new Map(mapRows(doc).map((r) => [r.step, r.read]));
+    const lines = doc.split("\n");
+    const missing: string[] = [];
+    const nodes = hs.filter((h) => h.level === 3 && /^[12]\./.test(h.n));
+    let cites22: string[] = [];
+    for (const h of nodes) {
+      const next = hs.find((x) => x.line > h.line);
+      const body = lines.slice(h.line + 1, next ? next.line : undefined);
+      const cites = bodyCites(body);
+      if (h.n === "2.2") cites22 = cites;
+      const row = rows.get(`§${h.n} ${h.title}`) ?? [];
+      for (const c of cites) if (!row.includes(`§${c}`)) missing.push(`§${h.n} cites §${c}`);
+    }
+    // presence control: the derivation sees cites at all
+    expect(cites22).toContain("5.2");
+    const dead = [...rows.values()].flat().filter((s) => s.startsWith("§") && !known.has(s.slice(1)));
+    expect({ missing, dead }).toEqual({ missing: [], dead: [] });
+  });
+
+  test("CM-map-rows every map row names exactly the sections the fixture pins", () => {
+    expect(MAP_FIX.length).toBe(18);
+    expect(mapRows(read(DOC))).toEqual(MAP_FIX);
+  });
+
+  test("CM-strip the §7 strip keeps the contents and the map, and drops §7 and the changelog", () => {
+    const doc = read(DOC);
+    // presence control: the input has what the strip must remove
+    expect({ s7: /^## 7\. /m.test(doc), changes: /^## Changes /m.test(doc) }).toEqual({ s7: true, changes: true });
+    const r = Bun.spawnSync(["awk", STRIP, DOC]);
+    expect(r.exitCode).toBe(0);
+    const out = r.stdout.toString();
+    expect({
+      contents: out.includes("\n## Contents and reading map\n"),
+      orderStart: out.includes("\n| Order start | "),
+      s8: /^## 8\. /m.test(out),
+      s7: /^## 7\. /m.test(out),
+      changes: /^## Changes /m.test(out),
+    }).toEqual({ contents: true, orderStart: true, s8: true, s7: false, changes: false });
   });
 });
