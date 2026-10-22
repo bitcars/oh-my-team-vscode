@@ -126,6 +126,44 @@ const MUTANTS: Mutant[] = [
     patches: [['    else\n        tmux "$@"\n    fi', '    else\n        tmux -L omt "$@"\n    fi']],
     mustFail: [T1F], mustPass: [T2],
   },
+  // T1's exact-target allowance (WO-029) must not hide a real change.
+  {
+    name: "t1-allowance-hides-rename: hub remove checks omt-x$NAME",
+    file: "bin/omt", suite: PROFILE,
+    patches: [['    if omt_tmux has-session -t "=omt-$NAME" 2>/dev/null; then\n', '    if omt_tmux has-session -t "=omt-x$NAME" 2>/dev/null; then\n']],
+    mustFail: [T1F], mustPass: [T2],
+  },
+  {
+    name: "t1-allowance-hides-extra-arg: hub status's has-session gains -x",
+    file: "bin/omt", suite: PROFILE,
+    patches: [['    if omt_tmux has-session -t "=omt-hub" 2>/dev/null; then\n        echo -e "  Hub:      ${GREEN}running${RESET}"\n', '    if omt_tmux has-session -x -t "=omt-hub" 2>/dev/null; then\n        echo -e "  Hub:      ${GREEN}running${RESET}"\n']],
+    mustFail: [T1CMDS], mustPass: [T2],
+  },
+  {
+    name: "t1-allowance-double-eq: hub start checks ==omt-hub",
+    file: "bin/omt", suite: PROFILE,
+    patches: [['    local HUB_BRIDGE_PORT=8801\n    if omt_tmux has-session -t "=omt-hub" 2>/dev/null; then\n', '    local HUB_BRIDGE_PORT=8801\n    if omt_tmux has-session -t "==omt-hub" 2>/dev/null; then\n']],
+    mustFail: [T1F], mustPass: [T2],
+  },
+  {
+    name: "t1-allowance-extra-colon: hub attach's has-session target gains a colon",
+    file: "bin/omt", suite: PROFILE,
+    patches: [['        omt_tmux has-session -t "=omt-hub" 2>/dev/null || { echo -e "${RED}Hub not running.${RESET}"; exit 1; }\n', '        omt_tmux has-session -t "=omt-hub:" 2>/dev/null || { echo -e "${RED}Hub not running.${RESET}"; exit 1; }\n']],
+    mustFail: [T1CMDS], mustPass: [T2],
+  },
+  // A target back in prefix form normalises to the old line: only T1's exactness check sees it.
+  {
+    name: "t1-allowance-prefix: hub status's has-session drops its =",
+    file: "bin/omt", suite: PROFILE,
+    patches: [['    # Hub session status\n    if omt_tmux has-session -t "=omt-hub" 2>/dev/null; then\n', '    # Hub session status\n    if omt_tmux has-session -t "omt-hub" 2>/dev/null; then\n']],
+    mustFail: [T1CMDS], mustPass: [T2],
+  },
+  {
+    name: "t1-allowance-colon-drop: hub add's first Enter drops its colon",
+    file: "bin/omt", suite: PROFILE,
+    patches: [['    sleep 2\n    omt_tmux send-keys -t "=omt-$NAME:" Enter 2>/dev/null\n', '    sleep 2\n    omt_tmux send-keys -t "=omt-$NAME" Enter 2>/dev/null\n']],
+    mustFail: [T1F], mustPass: [T2],
+  },
   // ── T2: resolution ──
   {
     name: "profile-inherits-port: the router port comes from the inherited env",
@@ -143,7 +181,7 @@ const MUTANTS: Mutant[] = [
   {
     name: "bare-tmux: one call bypasses omt_tmux",
     file: "bin/omt", suite: PROFILE,
-    patches: [['    # Start the router\n    if omt_tmux has-session -t "omt-router" 2>/dev/null; then', '    # Start the router\n    if tmux has-session -t "omt-router" 2>/dev/null; then']],
+    patches: [['    # Start the router\n    if omt_tmux has-session -t "=omt-router" 2>/dev/null; then', '    # Start the router\n    if tmux has-session -t "=omt-router" 2>/dev/null; then']],
     mustFail: [T3REAL], mustPass: [T3LINT],
   },
   // ── T4: guard ──

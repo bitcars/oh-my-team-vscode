@@ -539,11 +539,11 @@ ENVEOF
 
         # Auto-accept trust/channel prompts
         sleep 2
-        omt_tmux send-keys -t "omt-$name" Enter 2>/dev/null
+        omt_tmux send-keys -t "=omt-$name:" Enter 2>/dev/null
         sleep 1
-        omt_tmux send-keys -t "omt-$name" Enter 2>/dev/null
+        omt_tmux send-keys -t "=omt-$name:" Enter 2>/dev/null
         sleep 1
-        omt_tmux send-keys -t "omt-$name" Enter 2>/dev/null
+        omt_tmux send-keys -t "=omt-$name:" Enter 2>/dev/null
 
         # Wait for bridge to be ready, then re-register with router
         (
@@ -556,7 +556,7 @@ ENVEOF
                     break
                 fi
                 # Extra Enter in case of lingering prompts
-                [ $((retries % 10)) -eq 0 ] && omt_tmux send-keys -t "omt-$name" Enter 2>/dev/null
+                [ $((retries % 10)) -eq 0 ] && omt_tmux send-keys -t "=omt-$name:" Enter 2>/dev/null
             done
 
             if curl -s "http://localhost:$PORT/health" > /dev/null 2>&1; then
@@ -652,7 +652,7 @@ hub_start() {
     fi
 
     # Start the router
-    if omt_tmux has-session -t "omt-router" 2>/dev/null; then
+    if omt_tmux has-session -t "=omt-router" 2>/dev/null; then
         echo -e "${YELLOW}Router already running.${RESET}"
     else
         echo -e "${GREEN}Starting router on port $ROUTER_PORT...${RESET}"
@@ -674,7 +674,7 @@ hub_start() {
 
     # Start the hub Claude session with a bridge connected to General topic
     local HUB_BRIDGE_PORT=8801
-    if omt_tmux has-session -t "omt-hub" 2>/dev/null; then
+    if omt_tmux has-session -t "=omt-hub" 2>/dev/null; then
         echo -e "${YELLOW}Hub session already running.${RESET}"
     else
         echo -e "${GREEN}Starting hub session (bridge on port $HUB_BRIDGE_PORT)...${RESET}"
@@ -743,9 +743,9 @@ ENVEOF
 
         # Auto-accept trust and channel prompts (no manual interaction needed)
         sleep 3
-        omt_tmux send-keys -t omt-hub Enter 2>/dev/null
+        omt_tmux send-keys -t =omt-hub: Enter 2>/dev/null
         sleep 2
-        omt_tmux send-keys -t omt-hub Enter 2>/dev/null
+        omt_tmux send-keys -t =omt-hub: Enter 2>/dev/null
 
         # Wait for bridge to be ready
         echo -e "  ${DIM}Waiting for hub bridge...${RESET}"
@@ -759,7 +759,7 @@ ENVEOF
                 break
             fi
             # Periodically retry auto-accept in case prompts appeared late
-            [ $((retries % 10)) -eq 0 ] && omt_tmux send-keys -t omt-hub Enter 2>/dev/null
+            [ $((retries % 10)) -eq 0 ] && omt_tmux send-keys -t =omt-hub: Enter 2>/dev/null
         done
 
         # Register hub with the router
@@ -892,11 +892,11 @@ ENVEOF
 
     # Auto-accept the interactive prompts (trust + channel warning)
     sleep 2
-    omt_tmux send-keys -t "omt-$NAME" Enter 2>/dev/null
+    omt_tmux send-keys -t "=omt-$NAME:" Enter 2>/dev/null
     sleep 1
-    omt_tmux send-keys -t "omt-$NAME" Enter 2>/dev/null
+    omt_tmux send-keys -t "=omt-$NAME:" Enter 2>/dev/null
     sleep 1
-    omt_tmux send-keys -t "omt-$NAME" Enter 2>/dev/null
+    omt_tmux send-keys -t "=omt-$NAME:" Enter 2>/dev/null
 
     # Wait for bridge to be ready (longer timeout for first-run prompts)
     local retries=0
@@ -908,7 +908,7 @@ ENVEOF
             return 1
         fi
         # Send extra Enter in case prompts are still pending
-        [ $((retries % 5)) -eq 0 ] && omt_tmux send-keys -t "omt-$NAME" Enter 2>/dev/null
+        [ $((retries % 5)) -eq 0 ] && omt_tmux send-keys -t "=omt-$NAME:" Enter 2>/dev/null
     done
 
     # Register with router (creates a thread/topic for the session)
@@ -949,8 +949,8 @@ hub_remove() {
     curl -s -X DELETE "http://localhost:$ROUTER_PORT/sessions/$NAME" > /dev/null 2>&1
 
     # Kill tmux session
-    if omt_tmux has-session -t "omt-$NAME" 2>/dev/null; then
-        omt_tmux kill-session -t "omt-$NAME"
+    if omt_tmux has-session -t "=omt-$NAME" 2>/dev/null; then
+        omt_tmux kill-session -t "=omt-$NAME"
     fi
 
     # Clean up .omt-env
@@ -999,7 +999,7 @@ hub_status() {
     fi
 
     # Hub session status
-    if omt_tmux has-session -t "omt-hub" 2>/dev/null; then
+    if omt_tmux has-session -t "=omt-hub" 2>/dev/null; then
         echo -e "  Hub:      ${GREEN}running${RESET}"
     else
         echo -e "  Hub:      ${RED}stopped${RESET}"
@@ -1012,14 +1012,14 @@ hub_status() {
 hub_attach() {
     local NAME="${1:-hub}"
     if [ "$NAME" = "hub" ]; then
-        omt_tmux has-session -t "omt-hub" 2>/dev/null || { echo -e "${RED}Hub not running.${RESET}"; exit 1; }
-        omt_tmux attach-session -t "omt-hub"
+        omt_tmux has-session -t "=omt-hub" 2>/dev/null || { echo -e "${RED}Hub not running.${RESET}"; exit 1; }
+        omt_tmux attach-session -t "=omt-hub"
     elif [ "$NAME" = "router" ]; then
-        omt_tmux has-session -t "omt-router" 2>/dev/null || { echo -e "${RED}Router not running.${RESET}"; exit 1; }
-        omt_tmux attach-session -t "omt-router"
+        omt_tmux has-session -t "=omt-router" 2>/dev/null || { echo -e "${RED}Router not running.${RESET}"; exit 1; }
+        omt_tmux attach-session -t "=omt-router"
     else
-        omt_tmux has-session -t "omt-$NAME" 2>/dev/null || { echo -e "${RED}Session '$NAME' not found.${RESET}"; hub_list; exit 1; }
-        omt_tmux attach-session -t "omt-$NAME"
+        omt_tmux has-session -t "=omt-$NAME" 2>/dev/null || { echo -e "${RED}Session '$NAME' not found.${RESET}"; hub_list; exit 1; }
+        omt_tmux attach-session -t "=omt-$NAME"
     fi
 }
 
@@ -1042,7 +1042,7 @@ hub_stop() {
                 [ -n "$session_path" ] && rm -f "$session_path/.omt-env" 2>/dev/null
                 curl -s -X DELETE "http://localhost:$ROUTER_PORT/sessions/$name" > /dev/null 2>&1
             fi
-            omt_tmux kill-session -t "$s" 2>/dev/null
+            omt_tmux kill-session -t "=$s" 2>/dev/null
             echo -e "  ${GREEN}Stopped: ${s#omt-}${RESET}"
         done <<< "$sessions"
     fi
@@ -1051,14 +1051,14 @@ hub_stop() {
     rm -f "$HOME/.omt-env" 2>/dev/null
 
     # Stop hub
-    if omt_tmux has-session -t "omt-hub" 2>/dev/null; then
-        omt_tmux kill-session -t "omt-hub"
+    if omt_tmux has-session -t "=omt-hub" 2>/dev/null; then
+        omt_tmux kill-session -t "=omt-hub"
         echo -e "  ${GREEN}Stopped: hub${RESET}"
     fi
 
     # Stop router (registry file on disk is preserved unless --clean)
-    if omt_tmux has-session -t "omt-router" 2>/dev/null; then
-        omt_tmux kill-session -t "omt-router"
+    if omt_tmux has-session -t "=omt-router" 2>/dev/null; then
+        omt_tmux kill-session -t "=omt-router"
         echo -e "  ${GREEN}Stopped: router${RESET}"
     fi
 
