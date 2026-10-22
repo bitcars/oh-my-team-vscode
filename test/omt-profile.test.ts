@@ -145,6 +145,10 @@ function testSocketHas(sb: Sandbox, name: string): boolean {
 // ── T1: the default mode is unchanged (P0) ────────────────────────────────
 
 describe("T1 default mode differential", () => {
+  // The exact-target allowance below (WO-029) assumes OLD_REF predates fork #10,
+  // so its targets are in prefix form. If OLD_REF moves past #10, T1 goes red
+  // loudly: the normalised new log drops the `=` the old log keeps. Update the
+  // allowance with it.
   const OLD_REF = "c5ae60b";
 
   function oldOmt(): string {
@@ -167,6 +171,41 @@ describe("T1 default mode differential", () => {
     return path.join(p, "bin", "omt");
   }
 
+  /**
+   * WO-029: new bin/omt targets sessions exactly, `-t =omt-x` and, on
+   * send-keys, `-t =omt-x:`. In the NEW tmux log only, on has-session,
+   * kill-session, attach-session and send-keys, that one `=` and send-keys'
+   * one trailing `:` are removed, so the rest still compares byte for byte.
+   * A target that breaks the rule is not normalised and fails the test by
+   * line; a colon on a session verb stays and shows as a diff.
+   */
+  const EXACT_VERBS = new Set(["has-session", "kill-session", "attach-session", "send-keys"]);
+
+  /** The line with its exact target normalised, or null when the target isn't exact. */
+  function exactAllowed(line: string): string | null {
+    const verb = line.split(" ")[0];
+    const at = line.indexOf(" -t ");
+    if (!EXACT_VERBS.has(verb) || at < 0) return line;
+    const start = at + " -t ".length;
+    const space = line.indexOf(" ", start);
+    const end = space < 0 ? line.length : space;
+    const token = line.slice(start, end);
+    const q = token.length > 1 && token.startsWith('"') && token.endsWith('"') ? '"' : "";
+    let value = q ? token.slice(1, -1) : token;
+    if (!/^=[^=]/.test(value) || (verb === "send-keys" && !value.endsWith(":"))) return null;
+    value = value.slice(1);
+    if (verb === "send-keys") value = value.slice(0, -1);
+    return line.slice(0, start) + q + value + q + line.slice(end);
+  }
+
+  function log(sb: Sandbox, name: string, version: "old" | "new"): string[] {
+    const lines = logLines(sb, name);
+    if (name !== "tmux" || version === "old") return lines;
+    expect(lines.some((l) => l.includes("=omt-"))).toBe(true); // presence: the exact targets reached the log
+    expect({ violations: lines.filter((l) => exactAllowed(l) === null) }).toEqual({ violations: [] });
+    return lines.map((l) => exactAllowed(l) ?? l);
+  }
+
   function transcript(version: "old" | "new", fleetAgents: boolean): string {
     const sb = box({ mode: "record", fleetAgents });
     const script = plugin(sb, version);
@@ -184,7 +223,7 @@ describe("T1 default mode differential", () => {
     );
     run(["hub", "start"]);
     run(["hub", "stop", "--clean"]);
-    const logs = ["tmux", "curl", "bun", "open", "node", "omt", "refused"].map((n) => `## ${n}\n${logLines(sb, n).join("\n")}`);
+    const logs = ["tmux", "curl", "bun", "open", "node", "omt", "refused"].map((n) => `## ${n}\n${log(sb, n, version).join("\n")}`);
     const tree = Object.entries(manifest(sb.root, ["log", "shim"])).filter(([k]) => !k.startsWith("plugin/bin"));
     // contents, not hashes: files embed the sandbox path, which differs per run
     const contents = tree
@@ -206,7 +245,7 @@ describe("T1 default mode differential", () => {
       const r = runOmt(sb, args, { profile: false, script });
       outs.push(`$ ${args.join(" ")} -> ${r.code}\n${r.stdout}${r.stderr}`);
     }
-    const logs = ["tmux", "curl", "bun", "open", "node", "omt", "refused"].map((n) => `## ${n}\n${logLines(sb, n).join("\n")}`);
+    const logs = ["tmux", "curl", "bun", "open", "node", "omt", "refused"].map((n) => `## ${n}\n${log(sb, n, version).join("\n")}`);
     return [...outs, ...logs].join("\n").split(sb.root).join("<SB>").replace(/omt-\d+/g, "omt-PID");
   }
 

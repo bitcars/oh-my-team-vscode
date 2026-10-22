@@ -16,6 +16,11 @@
  *   non-localhost URL with exit 7. In "record" mode (the T1 differential)
  *   tmux, curl, bun and sleep never run for real: they log argv and fake a
  *   reply.
+ * - pinDefault (guard mode, needs fleetAgents) is for tests that run the
+ *   default mode on purpose. Its tmux shim pins every bare call to the
+ *   sandbox's own -L server, forces TMUX_TMPDIR into the sandbox, runs
+ *   attach-session as a `-C` control-mode stand-in (no tty), and still
+ *   refuses any other -L, any -S, and a -S hidden in a flag cluster (-uS).
  * - Nothing here ever runs the real `claude`: the claude shim dumps its env
  *   and argv, runs the status hook once, then starts the real bridge.ts,
  *   but only if its ROUTER_URL and BRIDGE_PORT are set and outside
@@ -83,15 +88,11 @@ function sh(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-function writeShims(sb: Sandbox) {
+function writeShims(sb: Sandbox, pinDefault: boolean) {
   const L = sb.log;
   // tmux
-  if (sb.mode === "guard") {
-    writeExec(
-      path.join(sb.shim, "tmux"),
-      `#!/bin/bash
-printf '%q ' "$@" >> ${sh(L)}/tmux.log; echo >> ${sh(L)}/tmux.log
-ok=0; prev=""; other=0
+  const logArgv = (f: string) => `printf '%q ' "$@" >> ${sh(L)}/${f}; echo >> ${sh(L)}/${f}\n`;
+  const guard = `ok=0; prev=""; other=0
 for a in "$@"; do
   name=""
   if [ "$prev" = "-L" ]; then name="$a"; fi
@@ -107,11 +108,60 @@ fi
 # Any other -L name, or a -S socket path (which can point anywhere, even at
 # the default server), is refused, inside a test pane too.
 [ $other = 1 ] && ok=0
-if [ $ok = 1 ]; then exec ${sh(REAL.tmux)} "$@"; fi
-echo "REFUSED tmux $*" >> ${sh(L)}/tmux.log
+`;
+  const refuse = `echo "REFUSED tmux $*" >> ${sh(L)}/tmux.log
 echo "REFUSED tmux $*" >> ${sh(L)}/refused.log
 exit 99
-`
+`;
+  if (sb.mode === "guard" && !pinDefault) {
+    writeExec(
+      path.join(sb.shim, "tmux"),
+      `#!/bin/bash
+${logArgv("tmux.log")}${guard}if [ $ok = 1 ]; then exec ${sh(REAL.tmux)} "$@"; fi
+${refuse}`
+    );
+  } else if (sb.mode === "guard") {
+    // pinDefault: default mode's bare tmux lands on this sandbox's server.
+    // tmux-call.log keeps the call bin/omt made, tmux.log the call after the
+    // pin and the attach stand-in. A tty attach never runs: attach-session
+    // runs in control mode and attach.log names the session it reached.
+    writeExec(
+      path.join(sb.shim, "tmux"),
+      `#!/bin/bash
+export TMUX_TMPDIR=${sh(path.join(sb.root, "tmux"))}
+${logArgv("tmux-call.log")}pin=1; for a in "$@"; do case "$a" in -L*|-S*) pin=0 ;; esac; done; [ $pin = 1 ] && set -- -L ${sh(sb.socket)} "$@"
+standin=0; target=""
+if [ $# = 5 ] && [ "$1" = -L ] && [ "$2" = ${sh(sb.socket)} ] && [ "$3" = attach-session ] && [ "$4" = -t ]; then
+  standin=1; target="$5"
+  set -- -L "$2" -C attach-session -t "$target"
+fi
+${logArgv("tmux.log")}# A -S socket path can hide in a flag cluster before the subcommand (-uS,
+# -2uS): refuse it like -S. Options that take a value: c f L S T.
+args=("$@"); i=0; clusteredS=0
+while [ $i -lt \${#args[@]} ]; do
+  a="\${args[$i]}"
+  case "$a" in --|-) break ;; -?*) ;; *) break ;; esac
+  k=1
+  while [ $k -lt \${#a} ]; do
+    case "\${a:$k:1}" in
+      S) clusteredS=1; break ;;
+      c|f|L|T) [ $((k + 1)) -lt \${#a} ] || i=$((i + 1)); break ;;
+    esac
+    k=$((k + 1))
+  done
+  i=$((i + 1))
+done
+if [ $clusteredS = 1 ]; then
+${refuse}fi
+${guard}if [ $ok = 1 ] && [ $standin = 0 ]; then exec ${sh(REAL.tmux)} "$@"; fi
+if [ $ok = 1 ]; then
+  out="$(${sh(REAL.tmux)} "$@" </dev/null 2>&1)"; rc=$?
+  printf '%s\\n' "$out"
+  reached="$(printf '%s\\n' "$out" | sed -n 's/^%session-changed [^ ]* //p' | head -n 1)"
+  echo "ATTACH $target -> \${reached:-NONE}" >> ${sh(L)}/attach.log
+  exit $rc
+fi
+${refuse}`
     );
   } else {
     writeExec(
@@ -227,7 +277,15 @@ exec ${sh(REAL.bun)} run "$OMT_PLUGIN_DIR/channel/bridge.ts"
   );
 }
 
-export function makeSandbox(opts: { mode?: ShimMode; fleetAgents?: boolean; fleetConfig?: Record<string, unknown> } = {}): Sandbox {
+/**
+ * pinDefault (guard mode only) pins default mode's bare tmux calls to the
+ * sandbox's own -L server; see writeShims. It needs fleetAgents: without a
+ * sandbox ~/.oh-my-team/agents, default mode's PLUGIN_DIR is the live checkout,
+ * and a default `hub start` runs bun install and build in it.
+ */
+export function makeSandbox(opts: { mode?: ShimMode; fleetAgents?: boolean; fleetConfig?: Record<string, unknown>; pinDefault?: boolean } = {}): Sandbox {
+  if (opts.pinDefault && (opts.mode ?? "guard") !== "guard") throw new Error('harness: pinDefault needs mode: "guard"');
+  if (opts.pinDefault && !opts.fleetAgents) throw new Error("harness: pinDefault needs fleetAgents: true, or PLUGIN_DIR is the live checkout");
   const root = mkdtempSync(path.join(TMP_ROOT, "omt-wo021-"));
   const id = path.basename(root).replace(/^omt-wo021-/, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const sb: Sandbox = {
@@ -253,7 +311,8 @@ export function makeSandbox(opts: { mode?: ShimMode; fleetAgents?: boolean; flee
   copyFileSync(path.join(CHECKOUT, "channel", "dev", "stub-adapter-preload.ts"), path.join(root, "stub-adapter-preload.ts"));
   writeFileSync(sb.claudeJson, JSON.stringify({ projects: {} }));
   for (const f of ["tmux", "curl", "refused", "open", "xdg-open", "node", "bun", "omt"]) writeFileSync(path.join(sb.log, `${f}.log`), "");
-  writeShims(sb);
+  if (opts.pinDefault) for (const f of ["tmux-call", "attach"]) writeFileSync(path.join(sb.log, `${f}.log`), "");
+  writeShims(sb, opts.pinDefault === true);
   return sb;
 }
 
@@ -340,6 +399,22 @@ export async function runOmtAsync(
   const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   clearTimeout(timer);
   return { code, stdout, stderr };
+}
+
+/**
+ * Real tmux on the sandbox's own server, bypassing the shim (so the call never
+ * shows in tmux.log): how a pinDefault test sets up and inspects sessions.
+ * The env is bin/omt's default-mode env, so a server started here gives its
+ * panes the shims, the sandbox HOME and TMUX_TMPDIR=<sb>/tmux.
+ */
+export function sandboxTmux(sb: Sandbox, args: string[]): RunResult {
+  const r = spawnSync([REAL.tmux, "-f", sb.tmuxConf, "-L", sb.socket, ...args], {
+    env: buildEnv(sb, { profile: false }),
+    cwd: sb.root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return { code: r.exitCode ?? -1, stdout: r.stdout.toString(), stderr: r.stderr.toString() };
 }
 
 export function logLines(sb: Sandbox, name: string): string[] {
