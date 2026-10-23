@@ -43,6 +43,22 @@ TaskCreate(subject="Context mining", description="Search git/GitHub/docs for mis
 
 **IMPORTANT**: Oracle agents cannot read files — embed ALL file contents and diffs directly in their prompts. Hephaestus/Explorer agents CAN read files — give them pointers.
 
+Paste this block, unchanged, into every reviewer prompt in this step:
+
+<!-- review-brief:start -->
+**Tool calls and time budget (#36).**
+- One simple command per Bash call. One pipe into one filter (e.g. grep, head, tail, jq, wc, sort) is allowed, and so is `2>&1`.
+- Never use `bash -c` or `sh -c`, a multi-line command, a shell function definition, a `&&` / `;` chain, or a heredoc, printf or echo to build a script. A background agent's approval prompt for such a call can go unseen and hold the review for an hour.
+- Two levels of quoting are fine (a quoted string holding quotes of the other kind, e.g. `jq -r '.t=="x"' f`). Three levels are banned (a quote inside a quote inside a quote, e.g. `bash -c 'echo "it'"'"'s"'`, the shape that blocked).
+- Run a multi-step check as one simple call per step. If your spawner gave you a script file, run it as one call: `bash <file> </dev/null`.
+- The shell's working directory may reset between calls, so use absolute paths, not `cd`. For a command that may run past 2 minutes, set the Bash `timeout` (ms, up to 600000).
+- Time budget: 20 minutes of wall clock. Make `date -u` your first call. A step is one checklist item: check `date -u` before each step and at least every 5 calls. At 19 minutes keep working. At 20 minutes start no new call and write your report with `<partial>true</partial>` and a list of what you did not check.
+- A partial report's verdict is FAIL (incomplete), whatever you found.
+- The 20 minutes is set here. A spawner's prompt may name a different number, and then the prompt wins.
+<!-- review-brief:end -->
+
+If TeamCreate is not in your tool list, spawn each reviewer with Agent and `run_in_background: true`, with no team_name. The stuck rule in Step 5 is written for that route.
+
 ```
 Agent(
   prompt="GOAL & CONSTRAINT VERIFICATION
@@ -61,6 +77,7 @@ Agent(
   3. Flag over-engineering or scope creep.
   4. Walk through 3+ scenarios for behavioral correctness.
 
+  [PASTE THE BRIEF RULES BLOCK FROM ABOVE HERE]
   Output: <verdict>PASS/FAIL</verdict> <summary>1-3 sentences</summary> <blocking_issues>list or empty</blocking_issues>",
   subagent_type="oracle",
   team_name="review",
@@ -80,6 +97,7 @@ Agent(
   3. Execute P0 first, then P1
   4. For each test: execute, compare expected vs actual, mark PASS/FAIL
 
+  [PASTE THE BRIEF RULES BLOCK FROM ABOVE HERE]
   Output: <verdict>PASS/FAIL</verdict> <scenario_coverage>total/passed/failed</scenario_coverage> <blocking_issues>P0/P1 failures</blocking_issues>",
   subagent_type="hephaestus",
   team_name="review",
@@ -96,6 +114,7 @@ Agent(
 
   Categorize findings: CRITICAL (bugs/crashes), MAJOR (fix before merge), MINOR (improvement), NITPICK (style).
 
+  [PASTE THE BRIEF RULES BLOCK FROM ABOVE HERE]
   Output: <verdict>PASS/FAIL</verdict> <findings>categorized list</findings> <blocking_issues>CRITICAL+MAJOR only</blocking_issues>",
   subagent_type="reviewer",
   team_name="review",
@@ -112,6 +131,7 @@ Agent(
 
   Only CRITICAL/HIGH findings produce a FAIL.
 
+  [PASTE THE BRIEF RULES BLOCK FROM ABOVE HERE]
   Output: <verdict>PASS/FAIL</verdict> <severity>CRITICAL/HIGH/MEDIUM/LOW/NONE</severity> <findings>list with remediation</findings>",
   subagent_type="security-auditor",
   team_name="review",
@@ -132,6 +152,7 @@ Agent(
   5. Files that import or reference changed modules
   6. Documentation (README, docs/, comments) referencing changed behavior
 
+  [PASTE THE BRIEF RULES BLOCK FROM ABOVE HERE]
   Output: <verdict>PASS/FAIL</verdict> <discovered_context>source + finding + relevance</discovered_context> <missed_requirements>list or empty</missed_requirements>",
   subagent_type="explorer",
   team_name="review",
@@ -152,6 +173,20 @@ Track each teammate's verdict as they report back:
 | 5 | Context Mining | context-miner | pending |
 
 **Do NOT deliver the final report until ALL 5 have completed.**
+
+<!-- stuck-rule:start -->
+**Stuck background reviewer (#36).** You get no live events from a background agent, and silence to SendMessage means nothing; what you can see is its transcript. Check it on every turn you get while a background reviewer is out (out = its completion result has not reached you yet), one simple call per step:
+0. Right after the spawn result, run `date +%s` and keep the number as the spawn time.
+1. `ls ~/.claude/projects/*/*/subagents/agent-<agentId>.jsonl`, with `<agentId>` from the spawn result. If it lists 0 or more than 1 paths, report that, and treat the agent as stuck 300 seconds after the spawn time.
+2. `date +%s` (now).
+3. `stat -f %m <path>` on macOS, `stat -c %Y <path>` on Linux (the transcript's last write).
+4. `tail -n 1 <path> | jq -c '[.type, ([.message.content[]?.type] | join(","))]'`; a pending tool call prints `["assistant","tool_use"]`.
+5. Only if step 4 shows a pending tool call: `tail -n 1 <path> | jq '.message.content[]? | select(.type=="tool_use") | .input.timeout'`.
+The age is step 2 minus step 3, in seconds; work it out yourself, with no shell arithmetic. It is stuck at an age of 300 seconds or more, whatever the last line is; at 299 seconds it is not. Exception: if step 5 prints a number of 300000 (ms) or more, it is not stuck until the age reaches that number / 1000 + 60 seconds; without a timeout a Bash call dies at its 120000 ms default. When it is stuck: stop it with TaskStop, task_id = its agentId; copy its .jsonl into `.sisyphus/plans/evidence/<order>/` (`<order>` = the order id, or `adhoc-YYYYMMDD` by `date -u`) after `git check-ignore -q <dest>` exits 0 and `git ls-files .sisyphus/plans/evidence` prints nothing (otherwise copy it to your scratchpad and report that path); report its last command and the timestamps. Never wait on a stuck reviewer.
+<!-- stuck-rule:end -->
+
+A reviewer stopped by this rule counts as completed with verdict FAIL (stuck).
+A report with `<partial>true</partial>` counts as FAIL.
 
 **Verdict logic**: ALL 5 PASS = REVIEW PASSED. ANY FAIL = REVIEW FAILED.
 

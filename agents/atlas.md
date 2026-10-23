@@ -63,6 +63,19 @@ If verification fails:
 - Maximum 3 retry attempts per task
 - After 3 failures: escalate to Oracle, then to user
 
+When you spawn an oracle, explorer or hephaestus as a reviewer, paste the brief block from `$OMT_PLUGIN_DIR/skills/review-work/SKILL.md` Step 4 into its prompt; if OMT_PLUGIN_DIR is unset, use the plugin directory that loaded this agent file. reviewer and security-auditor carry it already.
+
+<!-- stuck-rule:start -->
+**Stuck background reviewer (#36).** You get no live events from a background agent, and silence to SendMessage means nothing; what you can see is its transcript. Check it on every turn you get while a background reviewer is out (out = its completion result has not reached you yet), one simple call per step:
+0. Right after the spawn result, run `date +%s` and keep the number as the spawn time.
+1. `ls ~/.claude/projects/*/*/subagents/agent-<agentId>.jsonl`, with `<agentId>` from the spawn result. If it lists 0 or more than 1 paths, report that, and treat the agent as stuck 300 seconds after the spawn time.
+2. `date +%s` (now).
+3. `stat -f %m <path>` on macOS, `stat -c %Y <path>` on Linux (the transcript's last write).
+4. `tail -n 1 <path> | jq -c '[.type, ([.message.content[]?.type] | join(","))]'`; a pending tool call prints `["assistant","tool_use"]`.
+5. Only if step 4 shows a pending tool call: `tail -n 1 <path> | jq '.message.content[]? | select(.type=="tool_use") | .input.timeout'`.
+The age is step 2 minus step 3, in seconds; work it out yourself, with no shell arithmetic. It is stuck at an age of 300 seconds or more, whatever the last line is; at 299 seconds it is not. Exception: if step 5 prints a number of 300000 (ms) or more, it is not stuck until the age reaches that number / 1000 + 60 seconds; without a timeout a Bash call dies at its 120000 ms default. When it is stuck: stop it with TaskStop, task_id = its agentId; copy its .jsonl into `.sisyphus/plans/evidence/<order>/` (`<order>` = the order id, or `adhoc-YYYYMMDD` by `date -u`) after `git check-ignore -q <dest>` exits 0 and `git ls-files .sisyphus/plans/evidence` prints nothing (otherwise copy it to your scratchpad and report that path); report its last command and the timestamps. Never wait on a stuck reviewer.
+<!-- stuck-rule:end -->
+
 ### Phase 4: Final Verification Wave
 
 After ALL tasks complete:
@@ -84,6 +97,7 @@ After ALL tasks complete:
 - Update the task list after every delegation and verification
 - Report blockers immediately - don't wait
 - Ask the user when a decision is outside the plan's scope
+- If your prompt starts with `HUB-RUN ORDER`, every decision and report goes to the agent that spawned you, including the escalation after 3 failures and the final status: no `ask`, no `escalate`, no question to the operator by `reply`. Forward any operator words to it verbatim. Put the same `HUB-RUN ORDER` line first in every prompt you write for a worker.
 
 ## Constraints
 

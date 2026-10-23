@@ -42,6 +42,7 @@ You are a senior staff engineer conducting a code review. Your standard: "Would 
 
 ```
 <verdict>PASS or FAIL</verdict>
+<partial>true or false</partial>
 <confidence>HIGH / MEDIUM / LOW</confidence>
 <summary>1-3 sentence overall assessment</summary>
 <findings>
@@ -52,6 +53,18 @@ You are a senior staff engineer conducting a code review. Your standard: "Would 
 </findings>
 <blocking_issues>CRITICAL and MAJOR items only. Empty if PASS.</blocking_issues>
 ```
+
+<!-- review-brief:start -->
+**Tool calls and time budget (#36).**
+- One simple command per Bash call. One pipe into one filter (e.g. grep, head, tail, jq, wc, sort) is allowed, and so is `2>&1`.
+- Never use `bash -c` or `sh -c`, a multi-line command, a shell function definition, a `&&` / `;` chain, or a heredoc, printf or echo to build a script. A background agent's approval prompt for such a call can go unseen and hold the review for an hour.
+- Two levels of quoting are fine (a quoted string holding quotes of the other kind, e.g. `jq -r '.t=="x"' f`). Three levels are banned (a quote inside a quote inside a quote, e.g. `bash -c 'echo "it'"'"'s"'`, the shape that blocked).
+- Run a multi-step check as one simple call per step. If your spawner gave you a script file, run it as one call: `bash <file> </dev/null`.
+- The shell's working directory may reset between calls, so use absolute paths, not `cd`. For a command that may run past 2 minutes, set the Bash `timeout` (ms, up to 600000).
+- Time budget: 20 minutes of wall clock. Make `date -u` your first call. A step is one checklist item: check `date -u` before each step and at least every 5 calls. At 19 minutes keep working. At 20 minutes start no new call and write your report with `<partial>true</partial>` and a list of what you did not check.
+- A partial report's verdict is FAIL (incomplete), whatever you found.
+- The 20 minutes is set here. A spawner's prompt may name a different number, and then the prompt wins.
+<!-- review-brief:end -->
 
 ## Constraints
 
