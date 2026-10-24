@@ -164,6 +164,12 @@ function startEchoBridge(sessionName: string): number {
       const url = new URL(req.url);
       const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
+      // A pre-#56 (legacy) bridge: the router treats a /health with this
+      // session and no auth flag as legacy, so these nonceless echoes still pass.
+      if (req.method === "GET" && url.pathname === "/health") {
+        return Response.json({ status: "ok", session: sessionName });
+      }
+
       if (req.method === "POST" && url.pathname === "/message") {
         const content = typeof body.content === "string" ? body.content.trim() : "";
         const sender = typeof body.sender === "string" ? body.sender : "?";

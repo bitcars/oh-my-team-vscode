@@ -41,6 +41,8 @@
     "docs/corp-mode-spec.md",
     "channel/bridge.ts",
     "channel/bridge-tools.ts",
+    "channel/bridge-http.ts",
+    "channel/origin.ts",
     "channel/bridge.mcp.json",
     "channel/router.ts",
     "channel/dashboard-server.ts",

@@ -9,11 +9,15 @@
  * is the MCP channel.
  */
 
+import { NONCE_HEADER, type NonceBook } from "./origin";
+
 export interface ToolContext {
   routerUrl: string;
   sessionName: string;
   fetchImpl?: typeof fetch;
   log?: (line: string) => void;
+  /** When set, every router call carries a nonce this bridge can vouch for (fork #56). */
+  nonces?: NonceBook;
 }
 
 // A type alias, not an interface: the SDK's result type has an index
@@ -131,9 +135,11 @@ function errorMessage(err: unknown): string {
 
 /** POST JSON to a router route; a non-2xx response throws with its body. */
 async function postToRouter(ctx: ToolContext, route: string, payload: unknown): Promise<Response> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (ctx.nonces) headers[NONCE_HEADER] = ctx.nonces.issue(ctx.sessionName);
   const response = await (ctx.fetchImpl ?? fetch)(`${ctx.routerUrl}${route}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(payload),
   });
   if (!response.ok) {

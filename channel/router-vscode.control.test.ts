@@ -31,6 +31,7 @@ const COPY = [
   ROUTER_SUITE,
   "bridge-tools.ts",
   "bridge-tools.test.ts",
+  "origin.ts",
 ];
 
 const MIRROR_CALL = `      recordAndBroadcastReply(sessionName, text, "reply", fileList);\n`;
@@ -114,7 +115,7 @@ const DELETE_RETIRE = `      for (const pd of Array.from(pendingDecisions.values
         if (pd.sessionName === name) retireDecision(pd, "expired").catch(() => {});
       }
 `;
-const FRAMED_TEXT = '      const framedText = text.replace(/<(\\/?)(team-message|ask-answer)/gi, "‹$1$2");\n';
+const FRAMED_TEXT = '      const framedText = escapeFraming(text);\n';
 
 const MUTANTS: Mutant[] = [
   {
@@ -302,7 +303,7 @@ const MUTANTS: Mutant[] = [
   },
   {
     name: "team-delivers-to-sender: team message posted to the sender's own bridge",
-    patches: [["fetch(`http://localhost:${toSession.bridgePort}/message`", "fetch(`http://localhost:${fromSession.bridgePort}/message`"]],
+    patches: [["bridgePost(toSession, \"/message\"", "bridgePost(fromSession, \"/message\""]],
     mustFail: ["delivers only to the target bridge and mirrors kind team to the recipient"],
     mustPass: ["mirrors kind escalate to the source and posts to its topic"],
   },
@@ -423,6 +424,7 @@ const MUTANTS: Mutant[] = [
   },
   {
     name: "opening-tag-passes: a forged <team-message from=...> passes through",
+    file: "origin.ts",
     patches: [["(team-message|ask-answer)/gi", "(team-message(?!\\s+from)|ask-answer)/gi"]],
     mustFail: ["forged framing tags in team text are neutralized; other markup is verbatim"],
     mustPass: ["delivers only to the target bridge and mirrors kind team to the recipient"],

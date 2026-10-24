@@ -79,7 +79,8 @@ for it.
 | `WS /ws/tmux/:name` | PTY bridge for interactive terminal |
 | `POST /ask` | A session asks the user to pick one of 2–4 options |
 | `POST /ask-answer` | Answer an open ask from a non-platform client (`{token, idx}`; 410 if already closed) |
-| `POST /team-message` | One session's agent messages another's |
+| `POST /team-message` | One session's agent messages another's. The sender is verified with a nonce callback to its bridge (fork #56); an unverifiable sender gets 403, as do `/reply`, `/ask` and `/escalate`. An old (pre-#56), nonceless bridge still passes: marked `verified="no"` on a team-message, unmarked on the other three (see docs/omtv.md, Trust boundary) |
+| `POST /verify-delivery` | A bridge confirms that a delivery's nonce came from this router (fork #56) |
 | `POST /escalate` | A session posts a blocker to its own topic |
 
 ### Event stream
@@ -108,8 +109,8 @@ Client reconnects with exponential backoff (500ms → 10s cap) so a
 An ask is posted to the session's topic as a numbered text card. It closes
 once: a typed option number or option text in the topic, or `POST
 /ask-answer`. Text sent from the panel never answers it, and `POST
-/admin/inject` refuses the senders `decision` and `team:*`, which only the
-router sets. An ask is also closed unanswered when a newer ask replaces it,
+/admin/inject` refuses the senders `decision` and `team:*` (which only the
+router sets), `hub` in any case, and any registered session name. An ask is also closed unanswered when a newer ask replaces it,
 when other text is typed in the topic, or after 6 hours; `session.ask.resolved` then carries `choice`
 `"(superseded)"`, `"(dismissed)"` or `"(expired)"`. Asks are kept in memory
 and lost when the router restarts. Team messages are mirrored as
@@ -133,8 +134,12 @@ Known limitations of asks, team messages and escalations:
 - A typed reply matches option text before option numbers, so with options
   that are themselves numbers, "1" picks the option labelled 1 (fork parity).
 - Team text is neutralized only for exact `<team-message` / `<ask-answer`
-  tags; lookalikes such as `< /team-message>` pass through. The bridge
-  trusts the channel sender, not the tags, so this is not an injection path.
+  tags; lookalikes such as `< /team-message>` pass through. The router sets
+  the sender and the frame, and attribute-escapes the `from` name. A new
+  bridge behind a new router refuses any `/message` the router didn't send
+  (verified with a nonce callback); behind an old router it accepts any local
+  POST, as before. The router still relays `/admin/inject` content from any
+  local process (see docs/omtv.md, Trust boundary).
 
 ## Access
 

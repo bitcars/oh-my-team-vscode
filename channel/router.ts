@@ -27,6 +27,21 @@ import {
   dashboardWebSocketHandlers,
 } from "./dashboard-server";
 import type { CtxEntry, CtxQuotaWindow, DashboardEvent, ReplyKind } from "./dashboard-server";
+import {
+  AUTH_VERSION,
+  NONCE_HEADER,
+  NONCE_RE,
+  NonceBook,
+  TOMBSTONE_MAX,
+  escapeFraming,
+  escapeName,
+  loopbackUrl,
+  probeHealth,
+  validName,
+  validPort,
+  verifyOrigin,
+  type RouterOriginDeps,
+} from "./origin";
 import path from "node:path";
 import { realpathSync, statSync } from "node:fs";
 import { userInfo } from "node:os";
@@ -488,6 +503,55 @@ async function readJsonObject(
 
 let registry = loadRegistry();
 const pendingRegistrations = new Set<string>();
+
+// ── Sender binding (fork #56) ──────────────────────────────────────────────
+// routerNonces: one per router→bridge delivery, taken by POST /verify-delivery.
+// tombstones: name → port of a DELETEd session, so a new registration of that
+// name can't move it while the old holder still answers (in memory only).
+const routerNonces = new NonceBook();
+const tombstones = new Map<string, number>();
+const originDeps: RouterOriginDeps = {
+  log: (line: string) => {
+    process.stderr.write(`${line}\n`);
+  },
+};
+
+/** Test seam: swap the fetch and timer the origin checks use. */
+export function __setOriginDeps(d: Partial<RouterOriginDeps>): void {
+  Object.assign(originDeps, d);
+}
+
+/** Test seam: read-only use. */
+export const __tombstones = tombstones;
+
+function bridgePost(session: SessionEntry, path: string, body: unknown, init: Pick<RequestInit, "signal"> = {}): Promise<Response> {
+  return (originDeps.fetchImpl ?? fetch)(loopbackUrl(session.bridgePort, path), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", [NONCE_HEADER]: routerNonces.issue(session.name) },
+    body: JSON.stringify(body),
+    ...init,
+  });
+}
+
+async function holderLive(name: string, port: number): Promise<boolean> {
+  const probe = await probeHealth(loopbackUrl(port, ""), originDeps);
+  if (probe.kind !== "ok" || probe.status !== 200) return false;
+  return probe.body.session === name;
+}
+
+function rememberTombstone(name: string, port: number): void {
+  tombstones.delete(name);
+  while (tombstones.size >= TOMBSTONE_MAX) tombstones.delete(tombstones.keys().next().value as string);
+  tombstones.set(name, port);
+}
+
+function liveOnPort(name: string, port: number): string {
+  return `session "${name}" is live on port ${port} (if that bridge is an orphan: lsof -nP -iTCP:${port} -sTCP:LISTEN, then kill it)`;
+}
+
+function notVerified(name: string, why: string): Response {
+  return Response.json({ error: `sender "${name}" not verified: ${why}` }, { status: 403 });
+}
 const config = loadConfig();
 
 // ── Profile startup guard (bin/omt --profile, WO-021) ─────────────────────
@@ -662,18 +726,17 @@ adapter.onMessage((message: InboundMessage) => {
     }
   }, 4000);
 
-  // Forward to the correct bridge
-  fetch(`http://localhost:${session.bridgePort}/message`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  // Forward to the correct bridge (with a router nonce, fork #56). A refusal
+  // is logged: a nonceless or unverifiable delivery is otherwise silent.
+  bridgePost(session, "/message", {
       content: message.text,
       sender: message.senderName,
       senderId: message.senderId,
       messageId: message.messageId,
       timestamp: message.timestamp,
       attachments: message.attachments,
-    }),
+  }).then((r) => {
+    if (!r.ok) process.stderr.write(`omt-router: forward to ${session.name} responded ${r.status}\n`);
   }).catch((err) => {
     process.stderr.write(
       `omt-router: Failed to forward to ${session.name}: ${err.message}\n`
@@ -694,11 +757,8 @@ function answerPermission(requestId: string, allow: boolean): void {
   // For now, broadcast to all sessions — only the one with the matching
   // request_id will accept it, others will ignore.
   for (const session of Object.values(registry.sessions)) {
-    fetch(`http://localhost:${session.bridgePort}/permission-response`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requestId, allow }),
-    }).catch(() => {
+    bridgePost(session, "/permission-response", { requestId, allow })
+      .catch(() => {
       // Session might be down — ignore
     });
   }
@@ -749,18 +809,13 @@ async function resolveDecision(
     const safeQuestion = attr(pd.question);
     const safeAnsweredBy = attr(answeredBy.name);
     try {
-      const res = await fetch(`http://localhost:${session.bridgePort}/message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const res = await bridgePost(session, "/message", {
           content: `<ask-answer question="${safeQuestion}" answered_by="${safeAnsweredBy}">\n${answer}\n</ask-answer>`,
           sender: "decision",
           senderId: answeredBy.id,
           messageId: `ask-${pd.token}`,
           timestamp: new Date().toISOString(),
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
+      }, { signal: AbortSignal.timeout(10_000) });
       if (!res.ok) error = `bridge responded ${res.status}`;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -890,6 +945,7 @@ Bun.serve({
         status: "ok",
         platform: config.platform,
         sessions: Object.keys(registry.sessions).length,
+        auth: AUTH_VERSION,
       });
     }
 
@@ -944,9 +1000,20 @@ Bun.serve({
         isHub?: boolean;
       };
 
-      if (!name || !path || !bridgePort) {
+      // (a) name, (b) path, (c) port (fork #56). A name reaches the tag
+      // framing and every lookup, so only plain names are accepted.
+      if (!validName(name)) {
         return Response.json(
-          { error: "name, path, and bridgePort are required" },
+          { error: "name must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ and not be a case variant of hub" },
+          { status: 400 }
+        );
+      }
+      if (!path) {
+        return Response.json({ error: "path is required" }, { status: 400 });
+      }
+      if (!validPort(bridgePort, ROUTER_PORT)) {
+        return Response.json(
+          { error: "bridgePort must be an integer 1-65535 other than the router's port" },
           { status: 400 }
         );
       }
@@ -955,8 +1022,23 @@ Bun.serve({
       // When hub_start restores sessions after a stop, the registry still
       // has the old entries (threadId, displayName). We update the mutable
       // fields (bridgePort, startedAt, path) and reopen the thread.
-      const existing = registry.sessions[name];
+      // A name whose current holder still answers /health as that session
+      // can't be moved to another port (fork #56).
+      const existing = Object.hasOwn(registry.sessions, name) ? registry.sessions[name] : undefined;
+      let heldPending = false;
       if (existing) {
+        const probedPort = existing.bridgePort;
+        const live = await holderLive(name, probedPort);
+        const current = Object.hasOwn(registry.sessions, name) ? registry.sessions[name] : undefined;
+        if (current !== existing || current.bridgePort !== probedPort) {
+          process.stderr.write(`omt-router: refused re-register of "${name}": changed during registration\n`);
+          return Response.json({ error: `session "${name}" changed during registration` }, { status: 409 });
+        }
+        if (live && bridgePort !== probedPort) {
+          process.stderr.write(`omt-router: refused re-register of "${name}": live on port ${probedPort}\n`);
+          return Response.json({ error: liveOnPort(name, probedPort) }, { status: 409 });
+        }
+
         // Reopen the thread in the adapter (e.g. reopenForumTopic on Telegram)
         if (adapter.reopenThread) {
           try {
@@ -967,11 +1049,18 @@ Bun.serve({
             );
           }
         }
+        // The reopen above can await the platform: check again before committing.
+        const afterReopen = Object.hasOwn(registry.sessions, name) ? registry.sessions[name] : undefined;
+        if (afterReopen !== existing || afterReopen.bridgePort !== probedPort) {
+          process.stderr.write(`omt-router: refused re-register of "${name}": changed during thread reopen\n`);
+          return Response.json({ error: `session "${name}" changed during registration (thread reopen)` }, { status: 409 });
+        }
 
-        // Update mutable fields — the bridge port changes on restart
+        // Update mutable fields — the bridge port changes on restart. A live
+        // holder re-registering on its own port keeps its path.
         existing.bridgePort = bridgePort;
         existing.startedAt = new Date().toISOString();
-        existing.path = path;
+        if (!live) existing.path = path;
         saveRegistry(registry);
         clearCtx(name);
 
@@ -992,20 +1081,39 @@ Bun.serve({
         return Response.json(existing, { status: 200 });
       }
 
-      if (pendingRegistrations.has(name)) {
-        return Response.json(
-          { error: `session "${name}" is being created` },
-          { status: 409 }
-        );
+      // ── A DELETEd name: refuse while its old holder still answers ──────
+      // The name stays pending across the probe, so no other registration
+      // of it can run in between.
+      if (!existing && tombstones.has(name)) {
+        if (pendingRegistrations.has(name)) {
+          return Response.json({ error: `session "${name}" is being created` }, { status: 409 });
+        }
+        pendingRegistrations.add(name);
+        heldPending = true;
+        const tombPort = tombstones.get(name) as number;
+        if ((await holderLive(name, tombPort)) && bridgePort !== tombPort) {
+          pendingRegistrations.delete(name);
+          process.stderr.write(`omt-router: refused registration of "${name}": deleted holder live on port ${tombPort}\n`);
+          return Response.json({ error: liveOnPort(name, tombPort) }, { status: 409 });
+        }
       }
 
-      // ── New registration: create a fresh thread ──────────────────────
-      pendingRegistrations.add(name);
+      if (!heldPending) {
+        if (pendingRegistrations.has(name)) {
+          return Response.json(
+            { error: `session "${name}" is being created` },
+            { status: 409 }
+          );
+        }
+
+        // ── New registration: create a fresh thread ──────────────────────
+        pendingRegistrations.add(name);
+      }
 
       let threadId: string;
       let threadDisplayName: string;
 
-      if (isHub) {
+      if (isHub && name === "hub") {
         threadId = "__general__";
         threadDisplayName = "General (Hub)";
       } else {
@@ -1034,6 +1142,7 @@ Bun.serve({
       };
 
       registry.sessions[name] = entry;
+      tombstones.delete(name);
       saveRegistry(registry);
       pendingRegistrations.delete(name);
       clearCtx(name);
@@ -1059,7 +1168,7 @@ Bun.serve({
 
     if (method === "DELETE" && url.pathname.startsWith("/sessions/")) {
       const name = url.pathname.split("/")[2];
-      const session = registry.sessions[name];
+      const session = Object.hasOwn(registry.sessions, name) ? registry.sessions[name] : undefined;
 
       if (!session) {
         return Response.json({ error: "session not found" }, { status: 404 });
@@ -1083,6 +1192,7 @@ Bun.serve({
         if (pd.sessionName === name) retireDecision(pd, "expired").catch(() => {});
       }
 
+      rememberTombstone(name, session.bridgePort);
       delete registry.sessions[name];
       saveRegistry(registry);
       ctxBySession.delete(name);
@@ -1149,6 +1259,8 @@ Bun.serve({
           { status: 404 }
         );
       }
+      const origin = await verifyOrigin("/reply", sessionName, session, req, originDeps);
+      if (!origin.ok) return notVerified(sessionName, origin.why);
 
       // Mirror the reply to non-platform clients (VS Code panel) over
       // /ws/events and record it for GET /history. Kept HERE, before the
@@ -1367,6 +1479,13 @@ Bun.serve({
           { status: 400 }
         );
       }
+      // Nor may an inject borrow a session's (or the hub's) name (fork #56).
+      if (injectSender.toLowerCase() === "hub" || Object.hasOwn(registry.sessions, injectSender)) {
+        return Response.json(
+          { error: `sender "${injectSender}" is reserved for the router` },
+          { status: 400 }
+        );
+      }
       if (!Object.hasOwn(registry.sessions, injectSession)) {
         return Response.json(
           { error: `session "${injectSession}" not found` },
@@ -1376,18 +1495,13 @@ Bun.serve({
       const session = registry.sessions[injectSession];
       const now = Date.now();
       try {
-        const res = await fetch(`http://localhost:${session.bridgePort}/message`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            content: injectContent,
+        const res = await bridgePost(session, "/message", {
+            content: escapeFraming(injectContent),
             sender: injectSender,
             senderId: "",
             messageId: `inject-${now}-${++injectCounter}`,
             timestamp: new Date(now).toISOString(),
-          }),
-          signal: AbortSignal.timeout(10_000),
-        });
+        }, { signal: AbortSignal.timeout(10_000) });
         if (!res.ok) {
           const detail = await res.text().catch(() => "");
           return Response.json(
@@ -1438,6 +1552,8 @@ Bun.serve({
         );
       }
       const session = registry.sessions[sessionName];
+      const origin = await verifyOrigin("/ask", sessionName, session, req, originDeps);
+      if (!origin.ok) return notVerified(sessionName, origin.why);
       const askOptions = options as string[];
       const token = newDecisionToken();
 
@@ -1529,6 +1645,18 @@ Bun.serve({
       return Response.json({ status: "answered", choice });
     }
 
+    // ── verify-delivery: a bridge asks whether we sent it a nonce ─────
+    // { nonce, session } → 200 {ok:true} only for a nonce this router issued
+    // for that session. The nonce is consumed either way (fork #56).
+
+    if (method === "POST" && url.pathname === "/verify-delivery") {
+      const body = await readJsonObject(req);
+      const nonce = body?.nonce;
+      const session = body?.session;
+      const ok = typeof nonce === "string" && NONCE_RE.test(nonce) && typeof session === "string" && routerNonces.take(nonce) === session;
+      return ok ? Response.json({ ok: true }) : Response.json({ ok: false }, { status: 403 });
+    }
+
     // ── team_message: one session's agent → another's ─────────────────
     // { from, to, text } → delivered to the target bridge as <team-message>.
 
@@ -1568,31 +1696,31 @@ Bun.serve({
       }
       const fromSession = registry.sessions[from];
       const toSession = registry.sessions[to];
+      const origin = await verifyOrigin("/team-message", from, fromSession, req, originDeps);
+      if (!origin.ok) return notVerified(from, origin.why);
 
       // Team text is another agent's words. Neutralize only the tag
       // sequences that could forge our framing (a fake </team-message> or
       // <ask-answer>); other markup such as code passes through verbatim.
-      const framedText = text.replace(/<(\/?)(team-message|ask-answer)/gi, "‹$1$2");
+      // The name is attribute-escaped too; a legacy (unverified) sender is
+      // marked verified="no".
+      const fromAttr = escapeName(from);
+      const framedText = escapeFraming(text);
       const inbound = [
-        `<team-message from="${from}">`,
+        `<team-message from="${fromAttr}"${origin.verified ? "" : ' verified="no"'}>`,
         framedText,
         `</team-message>`,
         ``,
-        `(This is from another omt project session. To reply, call team_message({ to: "${from}", text: "..." }) — do NOT use the reply tool, it would only post to your own topic.)`,
+        `(This is from another omt project session. To reply, call team_message({ to: "${fromAttr}", text: "..." }) — do NOT use the reply tool, it would only post to your own topic.)`,
       ].join("\n");
       try {
-        const res = await fetch(`http://localhost:${toSession.bridgePort}/message`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const res = await bridgePost(toSession, "/message", {
             content: inbound,
-            sender: `team:${from}`,
+            sender: `team:${fromAttr}`,
             senderId: "",
             messageId: `team-${Date.now()}-${++teamMessageCounter}`,
             timestamp: new Date().toISOString(),
-          }),
-          signal: AbortSignal.timeout(10_000),
-        });
+        }, { signal: AbortSignal.timeout(10_000) });
         if (!res.ok) {
           const detail = await res.text().catch(() => "");
           return Response.json(
@@ -1642,6 +1770,9 @@ Bun.serve({
           { status: 400 }
         );
       }
+      const fromSession = registry.sessions[from];
+      const origin = await verifyOrigin("/escalate", from, fromSession, req, originDeps);
+      if (!origin.ok) return notVerified(from, origin.why);
       // Mirror first (after validation, before the awaited platform send) so
       // a platform failure can't hide it. kind "escalate" marks it important.
       recordAndBroadcastReply(from, `🆘 Escalation — ${reason}\n\n${question}`, "escalate", []);
