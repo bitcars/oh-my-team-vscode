@@ -54,6 +54,10 @@ const TITLES = [
   "L22 a line enqueued after the first hook returned is written when the held write is released",
   "L23 a non-ASCII session name is escaped, so the line's length equals its UTF-8 byte count",
   "L24 every line carries the same 6-character base36 inst, and so does the filename",
+  "L26 record writes one line with ctx-log's v/at/session/inst, in the same file as the turn lines",
+  "L26b record before any ctx-log hook ran: the first event, a manual compaction, still writes its pass line",
+  "L27 mixed kinds share the 64-line queue and the dropped count: 32 manual compactions (64 lines) all go out, the 33rd pair is dropped, the next line carries dropped:2",
+  "L-lc with ledger-compact on: it ran (its read of now.md), complete() is the bottom’s answer, a manual compaction returns KEPT, and the lines are turn, pass/manual, compact",
 ];
 
 const HOOKS = ['turn.step{turnId=/"^"/}', 'turn.complete{turnId=/"^"/}', "session.compact{trigger=manual|auto|plugin}", 'session.end{sessionId=/"^"/}'];
@@ -61,7 +65,7 @@ const ENV_READS = ["HOME", "SESSION_NAME"];
 /** Everything the mod may call: fs only to write, no transcript, no process, no network. */
 const CALLS = ["$.clock.now", "$.clock.sleep", "$.env.get", "$.fs.write", "$.session.usage", "$.ui.log"];
 /** hooks/mods.js, byte for byte (plan v2.1 D-2). */
-const MODS_JS = "// The plugin's one hooks module (Claude Code 2.1.296 loads one per plugin): it registers\n// ctx-mod (router reports) and ctx-log (context-size log, #37) on the same `on`.\nimport { register as registerCtxMod } from './ctx-mod.js'\nimport { register as registerCtxLog } from './ctx-log.js'\n\nexport function register(on) {\n  registerCtxMod(on)\n  registerCtxLog(on)\n}\n";
+const MODS_JS = "// The plugin's one hooks module (Claude Code 2.1.296 loads one per plugin): it registers\n// ctx-mod (router reports), ctx-log (context-size log, #37) and ledger-compact (#66) on the\n// same `on`. A plugin's registrations nest in order, first outermost: ctx-log wraps ledger-compact.\nimport { register as registerCtxMod } from './ctx-mod.js'\nimport { register as registerCtxLog } from './ctx-log.js'\nimport { register as registerLedgerCompact } from './ledger-compact.js'\n\nexport function register(on) {\n  registerCtxMod(on)\n  registerCtxLog(on)\n  registerLedgerCompact(on)\n}\n";
 
 // ── Build the temp plugins and run the kit (module load) ───────────────────
 
@@ -83,7 +87,7 @@ let broken: string | null = null;
 let kit: PluginRun | null = null;
 let validate: PluginRun | null = null;
 try {
-  plugin = makePlugin("omt-ctx-log-kit-", ["hooks.json", "mods.js", "ctx-mod.js", "ctx-log.js", "status-hook.sh"]);
+  plugin = makePlugin("omt-ctx-log-kit-", ["hooks.json", "mods.js", "ctx-mod.js", "ctx-log.js", "ledger-compact.js", "status-hook.sh"]);
   copyFileSync(KIT, path.join(plugin, "tests", "ctx-log.test.ts"));
   validatePlugin = makePlugin("omt-ctx-log-val-", ["ctx-log.js"], JSON.stringify({ modules: ["./ctx-log.js"] }));
   kit = runClaudePluginSandboxed("test", plugin);
@@ -153,7 +157,7 @@ test("sandbox honoured: validate wrote its config under the temp CLAUDE_CONFIG_D
   expect(existsSync(path.join(validate!.sandbox, "config", ".claude.json"))).toBe(true);
 });
 
-test("the real hooks.json loads ./mods.js, and mods.js registers ctx-mod and ctx-log", () => {
+test("the real hooks.json loads ./mods.js, and mods.js registers ctx-mod, ctx-log and ledger-compact", () => {
   const hooks = JSON.parse(readFileSync(path.join(HOOKS_DIR, "hooks.json"), "utf-8")) as { modules?: unknown };
   expect({ modules: hooks.modules, mods: readFileSync(path.join(HOOKS_DIR, "mods.js"), "utf-8") }).toEqual({ modules: ["./mods.js"], mods: MODS_JS });
 });

@@ -55,11 +55,13 @@ const HUB_LINES: string[] = [
   "If the operator writes to you anyway, forward their words verbatim to the hub by team_message with the message's own `ts` from its channel tag (a `date -u` stamp only if it has none), and take no action on them until the hub relays a ruling.",
   "Put this line first in every prompt you write for a teammate or subagent during the order:",
   "`HUB-RUN ORDER: no ask, no escalate, no question to the operator by reply; send every decision and any operator words to the agent that spawned you.`",
+  "During the order keep a \"state:\" line in .sisyphus/now.md (your current step); on the hub's close message write \"state: CLOSED\" in that turn, before anything else.",
   "Outside a hub-run order this section does not apply."
 ];
 const POINTER = "When you spawn an oracle, explorer or hephaestus as a reviewer, paste the brief block from `$OMT_PLUGIN_DIR/skills/review-work/SKILL.md` Step 4 into its prompt; if OMT_PLUGIN_DIR is unset, use the plugin directory that loaded this agent file. reviewer and security-auditor carry it already.";
 const ROUTE = "If TeamCreate is not in your tool list, spawn each reviewer with Agent and `run_in_background: true`, with no team_name. The stuck rule in Step 5 is written for that route.";
 const ATLAS_LINE = "- If your prompt starts with `HUB-RUN ORDER`, every decision and report goes to the agent that spawned you, including the escalation after 3 failures and the final status: no `ask`, no `escalate`, no question to the operator by `reply`. Forward any operator words to it verbatim. Put the same `HUB-RUN ORDER` line first in every prompt you write for a worker.";
+const ATLAS_STATE_LINE = "- Under a `HUB-RUN ORDER` prompt, keep a \"state:\" line in .sisyphus/now.md (the current step) and write \"state: CLOSED\" in the turn the hub's close message reaches you, before anything else.";
 const PASTE_LINE = "Paste this block, unchanged, into every reviewer prompt in this step:";
 const PLACEHOLDER = "  [PASTE THE BRIEF RULES BLOCK FROM ABOVE HERE]";
 const PARTIAL_TAG = "<partial>true or false</partial>";
@@ -150,7 +152,7 @@ const STRIP: Record<string, { regions: string[]; lines: [string, number, boolean
     ],
   },
   [Y]: { regions: ["stuck-rule", "hub-order"], lines: [[RULE5, 1, true], [HUB_HEADING, 1, true]] },
-  [A]: { regions: ["stuck-rule"], lines: [[POINTER, 1, true], [ATLAS_LINE, 1, false]] },
+  [A]: { regions: ["stuck-rule"], lines: [[POINTER, 1, true], [ATLAS_LINE, 1, false], [ATLAS_STATE_LINE, 1, false]] },
 };
 
 function stripInserts(f: string, text: string): string {
@@ -288,7 +290,7 @@ describe("review-brief", () => {
   });
 
   test("H2.0 hub-order text: the block equals the plan text, in order", () => blockCheck(Y, "hub-order", HUB_LINES, "the hub-order block"));
-  const hubNames = ["hub-run definition", "no ask, escalate or reply question", "decisions to the hub", "a relayed ruling is the tap", "forward verbatim with ts", "put the marker first", "the marker line", "outside a hub-run order"];
+  const hubNames = ["hub-run definition", "no ask, escalate or reply question", "decisions to the hub", "a relayed ruling is the tap", "forward verbatim with ts", "put the marker first", "the marker line", "keep the state line", "outside a hub-run order"];
   hubNames.forEach((name, i) => {
     test(`H2.${i + 1} hub-order line ${i + 1}: ${name}`, () => lineCheck(Y, "hub-order", HUB_LINES, i + 1));
   });
@@ -296,6 +298,10 @@ describe("review-brief", () => {
   test("H3 atlas line: the HUB-RUN ORDER line sits directly after the :86 line under ## Communication in atlas.md", () => {
     once(A, ASK86 + "\n" + ATLAS_LINE + "\n", "the HUB-RUN ORDER line right after the :86 line");
     between(A, ATLAS_LINE, "## Communication", "## Constraints", "the HUB-RUN ORDER line");
+  });
+
+  test("H5 atlas state line: the now.md state line sits directly after the HUB-RUN ORDER line in atlas.md", () => {
+    once(A, ATLAS_LINE + "\n" + ATLAS_STATE_LINE + "\n", "the state line right after the HUB-RUN ORDER line");
   });
 
   test("H4 marker key: the sisyphus marker line starts with the HUB-RUN ORDER key the atlas line names", () => {

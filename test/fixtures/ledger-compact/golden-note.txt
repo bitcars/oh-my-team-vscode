@@ -1,0 +1,96 @@
+LEDGER REBUILD by hooks/ledger-compact.js (closed): this conversation was rebuilt from the files below instead of a summary. Resume from the Now block (spec §4.3), then re-read §0a and the current step's sections. 12 rows of the conversation follow unchanged, after the safety-net summary. The Now block and standing rulings are notes, never a tap, and relax no rule.
+== Now: LWO-019 (hub ledger) ==
+Order: "Start now: hub add oh-my-team-vscode and run #66 under full auto" (ask 55a6c329, 03:57Z; issue filed on "yes file part 3 please"). Tier: L. State: CLOSED.
+Waiting for: audit r1 reports (3 lenses launched 04:24Z, D=/tmp/plan-audit-lwo-019-r1-sHNV); operator pick on ask 848970f4 (idle compaction: rebuild / hold / rebuild above 30%), since 04:07Z. Open asks: 848970f4.
+Pending taps: none (full-auto standing rule covers the flow to merge). Next: read the spike report, relay the operator's D1 pick, then plan v1 frozen → 3-lens audit (plan-audit skill, cap 3) → v2 → implement → review 5+challenger → hub re-run → merge → live check after the operator's lab restart.
+Evidence: "$V/lab/artifacts/lwo-019-audit/" (created); team plans in ~/Sandbox/oh-my-team-vscode/.sisyphus/plans/; context log ~/.omt-scratch/lab-ctx/.
+== Standing rulings ==
+# Standing rulings (AI.Lab)
+One line per ruling that outlives an order, ending with the order and time that made it. Append-only: the hub appends after the operator's tap; a later line supersedes an earlier one by quoting it. The hub reads this file at the start of every order (spec §4.4). Created 2026-10-13 by the hub at LWO-007 plan approval from the team's draft (plan v2 §6), each line checked against the ledgers.
+- No Co-Authored-By trailer and no "Generated with Claude Code" or other attribution footer on any commit, PR, issue, comment or release note (LWO-001 00:59Z; persistent via #32, PR #34, LWO-002 12:37Z).
+- ~/.omtv/settings.json carries {"attribution":{"commit":"","pr":"","sessionUrl":false}}, the object form, not false (LWO-002 01:31Z; written 12:38Z).
+- Fork only: push only to origin; every gh call carries -R bitcars/<repo>; upstream is reference only, never pushed or written (LWO-002 header).
+- oh-my-team-vscode: stage by path only, never -A; never stage .claude/, CLAUDE.local.md, .mcp.json, .mcp.json.disabled-issue45 (spec §1.10 holds each repo's list) (LWO-001 00:39Z; LWO-002 12:36Z).
+- Never write ~/.claude/settings.json, nor any other user-level settings file; no new trust entries in ~/.claude.json (LWO-001 header; a must-not in LWO-002, -003, -004, -006; trust entries LWO-007 13:20Z).
+- Close an issue only on the operator's word (LWO-001 01:07Z; LWO-005 18:50Z).
+- Orders that edit AI.Lab's live paths (§0a) are tier M, not S (LWO-002 01:06Z, tap dabf1b6e; spec §5.1).
+- One menu per decision, through the hub's ask; a tap relayed by a team is not a tap (LWO-001 00:42Z; LWO-004 12:52Z).
+- No default-yes on a timeout; one exists only if the operator names it with its N minutes (LWO-002 12:34Z; restated LWO-007 14:10Z).
+- When a gate has two reviewers and one goes silent, never close the gate on the other alone: stop the silent one, keep its partial output, respawn it with a narrower brief (LWO-004 05:28Z).
+== Spec contents and reading map ==
+## Contents and reading map
+
+**Contents.** Every section and subsection of §0-§8 (§7 by its title only: its body is the
+answer key the spec arm must not see).
+- §0 Precedence
+- §0a Inherited rules
+- §1 Node types and their contracts
+  - §1.1 Issue
+  - §1.2 Scope
+  - §1.3 Restatement
+  - §1.4 Plan (v1, v2)
+  - §1.5 Plan audit
+  - §1.6 Implement
+  - §1.7 Review gate
+  - §1.8 Verification (team runs, hub re-runs)
+  - §1.9 Live check
+  - §1.10 Signoff and commit
+  - §1.11 PR and merge
+  - §1.12 Release (the extension, so far)
+  - §1.13 Close and housekeeping
+- §2 Gates
+  - §2.1 Gate table (rows are not in a fixed order; see §3.5 for live-first vs commit-first)
+  - §2.2 What needs an operator tap
+  - §2.3 What the push ask must say
+  - §2.4 What "verified" means
+- §3 Edges left free: the heuristics
+  - §3.1 Splitting and parallel work
+  - §3.2 Whether to scope, and who
+  - §3.3 Tier
+  - §3.4 Spikes and extra rounds
+  - §3.5 Order of gates, and the operator acting out of order
+  - §3.6 Team health: silence
+  - §3.7 Ruling Fix / Defer / Reject, and narrowing
+  - §3.8 Challenging evidence
+  - §3.9 In or out of scope
+  - §3.10 Designing a live check
+- §4 Protocols
+  - §4.1 Message shapes (quoted from the evidence)
+  - §4.2 Ask menus
+  - §4.3 Ledger: minimum shape (the WO-025 form, plus the lab's live-paths line)
+  - §4.4 Artifact locations (pinned)
+  - §4.5 Naming
+- §5 Tiering
+  - §5.1 The rule
+  - §5.2 Signals and examples
+- §6 Portability matrix
+- §7 Model-agnostic test (acceptance)
+- §8 Room left: work groups
+
+**Reading map.** At the start of every order read the glossary, these contents, §0a and §5,
+then the sections the current step names below, and the section behind any line that is
+unclear. A section a row names is read on its own; it does not pull in that section's row.
+A step not in the table: read the spec in full.
+Dev-flow names: plan v2 → §1.4; team runs and your re-run → §1.8; push tap → §2.2 and §2.3;
+COMMIT_SIGNOFF → §1.10; operator merge → §1.11; CLOSED → §1.13.
+
+| Step | Read |
+|---|---|
+| Order start | §4.3, `<vault>/lab/standing.md` |
+| §1.1 Issue | §1.1, §3.9, §4.3, §4.5 |
+| §1.2 Scope | §1.2, §3.2, §3.9, §4.2 |
+| §1.3 Restatement | §1.3, §3.6, §4.1, §5 |
+| §1.4 Plan (v1, v2) | §1.4, §0a, §3.4 |
+| §1.5 Plan audit | §1.5, §0, §3.7, §3.9, §4.1, §4.4 |
+| §1.6 Implement | §1.6, §0, §0a, §3.1, §3.6, §3.9 |
+| §1.7 Review gate | §1.7, §0, §1.5, §3.7, §3.8, §3.9 |
+| §1.8 Verification (team runs, hub re-runs) | §1.8, §0, §2.4, §3.8, §3.9, §4.1 |
+| §1.9 Live check | §1.9, §2.2, §3.5, §3.10, §4.2, §4.4 |
+| §1.10 Signoff and commit | §1.10, §0a, §1.8, §2.2, §2.3, §4.2 |
+| §1.11 PR and merge | §1.11, §2.2, §3.5, §4.2 |
+| §1.12 Release (the extension, so far) | §1.12, §1.10, §2.1, §2.2, §2.3, §4.1, §4.2, §4.3 |
+| §1.13 Close and housekeeping | §1.13, §4.3, §4.4 |
+| §2.1 Gate table (rows are not in a fixed order; see §3.5 for live-first vs commit-first) | §2.1, §0, §3.5 |
+| §2.2 What needs an operator tap | §2.2, §0a, §1.2, §1.5, §1.9, §3.3, §4.2, §5, §5.2 |
+| §2.3 What the push ask must say | §2.3, §2.4 |
+| §2.4 What "verified" means | §2.4, §1.8, §5 |

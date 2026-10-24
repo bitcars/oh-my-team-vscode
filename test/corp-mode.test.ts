@@ -36,11 +36,11 @@ const FIX = path.join(CHECKOUT, "test", "fixtures");
 const SOURCE = path.join(FIX, "corp-mode-spec-v2.4-214952dc.md");
 const SOURCE_SHA1 = "214952dc19a46b4aa5832318f3e7fa7768744bed";
 const SOURCE_LINES = 975;
-const DOC_TITLE = "# Corp mode spec — v2.4-lab.2 (AI.Lab copy)";
+const DOC_TITLE = "# Corp mode spec — v2.4-lab.3 (AI.Lab copy)";
 
 /** The Dev flow rows (plan v2 §4 plus the review fix round), pinned by id: a dropped row is a dropped rule. */
-const ROW_IDS = ["1", "2", "3", "4", "5", "9", "10", "11", "12", "13", "14", "15", "16", "17", "29", "x-waiver", "x-teams", "x-scoping", "x-vault", "x-cli", "x-settings", "x-corp", "x-live", "x-tree", "x-read", "x-tap", "x-echo", "x-now"];
-const ADDITION_COUNT = 69;
+const ROW_IDS = ["1", "2", "3", "4", "5", "9", "10", "11", "12", "13", "14", "15", "16", "17", "29", "x-waiver", "x-teams", "x-scoping", "x-vault", "x-cli", "x-settings", "x-corp", "x-live", "x-tree", "x-read", "x-tap", "x-echo", "x-now", "30"];
+const ADDITION_COUNT = 95;
 const REWRITE_COUNT = 73;
 /**
  * sha256 pins (WO-027 review round 2, M-A): the keyword checks in CM2 and CM4
@@ -241,9 +241,10 @@ describe("CM hub.md Dev flow", () => {
 // ── fixture pins ──────────────────────────────────────────────────────────
 
 describe("CM fixtures", () => {
-  test("CM fixtures pinned: the 28 row ids, 69 additions and 73 rewrites, ids unique, every row with an inversion", () => {
+  test("CM fixtures pinned: the 29 row ids, 95 additions and 73 rewrites, ids unique, every row with an inversion", () => {
     const ids = ROWS_FIX.rows.map((r) => r.row);
     expect(ids).toEqual(ROW_IDS);
+    expect(new Set(ids).size).toBe(ids.length);
     expect(ROWS_FIX.rows.filter((r) => !(typeof r.invert?.find === "string" && r.invert.find && typeof r.invert.replace === "string")).map((r) => r.row)).toEqual([]);
     expect({ additions: ADDITIONS.length, unique: new Set(ADDITIONS.map((a) => a.id)).size }).toEqual({ additions: ADDITION_COUNT, unique: ADDITION_COUNT });
     expect({ rewrites: REWRITES.length, unique: new Set(REWRITES.map((r) => r.id)).size }).toEqual({ rewrites: REWRITE_COUNT, unique: REWRITE_COUNT });

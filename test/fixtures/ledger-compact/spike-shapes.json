@@ -1,0 +1,89 @@
+{
+  "source": "LWO-019 spike 2026-10-24 (.sisyphus/plans/lwo-019-spike.md sha1 69307c9b); U/A role, r toolResults, t toolUses, * no handle",
+  "rows": [
+    {
+      "spikeSession": "A",
+      "kind": "compact.in",
+      "trigger": "manual",
+      "n": 15,
+      "shape": "U A At Ur At Ur A At Ur A U A A U A"
+    },
+    {
+      "spikeSession": "A",
+      "kind": "rebuild",
+      "trigger": null,
+      "n": 5,
+      "shape": "U* A A U A"
+    },
+    {
+      "spikeSession": "A",
+      "kind": "compact.in",
+      "trigger": "manual",
+      "n": 10,
+      "shape": "U A A U A U U U A A"
+    },
+    {
+      "spikeSession": "A",
+      "kind": "rebuild",
+      "trigger": null,
+      "n": 5,
+      "shape": "U* U U A A"
+    },
+    {
+      "spikeSession": "B",
+      "kind": "compact.in",
+      "trigger": "auto",
+      "n": 7,
+      "shape": "U At At At Ur Ur Ur"
+    },
+    {
+      "spikeSession": "B",
+      "kind": "compact.in",
+      "trigger": "auto",
+      "n": 15,
+      "shape": "U At At At Ur Ur Ur A A At At At Ur Ur Ur"
+    },
+    {
+      "spikeSession": "B",
+      "kind": "compact.in",
+      "trigger": "auto",
+      "n": 18,
+      "shape": "U At Ur At Ur At Ur A A At Ur At Ur At Ur A A U"
+    },
+    {
+      "spikeSession": "B",
+      "kind": "compact.in",
+      "trigger": "auto",
+      "n": 20,
+      "shape": "U At Ur At Ur At Ur A A At Ur At Ur At Ur A A U A U"
+    },
+    {
+      "spikeSession": "C",
+      "kind": "compact.in",
+      "trigger": "auto",
+      "n": 24,
+      "shape": "U At Ur A A U At Ur A U At Ur A U At Ur A U A At Ur A At Ur"
+    },
+    {
+      "spikeSession": "C",
+      "kind": "compact.in",
+      "trigger": "auto",
+      "n": 26,
+      "shape": "U At Ur A A U At Ur A U At Ur A U At Ur A U A At Ur A At Ur A U"
+    },
+    {
+      "spikeSession": "C",
+      "kind": "compact.in",
+      "trigger": "auto",
+      "n": 28,
+      "shape": "U At Ur A A U At Ur A U At Ur A U At Ur A U A At Ur A At Ur A U At Ur"
+    },
+    {
+      "spikeSession": "C",
+      "kind": "compact.in",
+      "trigger": "auto",
+      "n": 30,
+      "shape": "U At Ur A A U At Ur A U At Ur A U At Ur A U A At Ur A At Ur A U At Ur At Ur"
+    }
+  ]
+}

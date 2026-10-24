@@ -50,7 +50,7 @@
     {
       "row": "9",
       "rule": "Ack first + 5-min status + keep now.md",
-      "mustMatch": "end each order you send with \"ack first, status every 5 min\" \\(a one-line ack before reading anything, then status every ~5 min\\) and \"keep \\.sisyphus\\/now\\.md\" \\(spec §4\\.1\\)\\.",
+      "mustMatch": "end each order you send with \"ack first, status every 5 min\" \\(a one-line ack before reading anything, then status every ~5 min\\) and \"keep \\.sisyphus\\/now\\.md with a state: line \\(your current step; closed when i close the order\\)\" \\(spec §4\\.1\\)\\.",
       "invert": {
         "find": "a one-line ack before reading anything",
         "replace": "an ack once you have read everything"
@@ -252,6 +252,15 @@
       "invert": {
         "find": "rewritten at every state change",
         "replace": "written once at the start"
+      }
+    },
+    {
+      "row": "30",
+      "rule": "Next order to a team only after its close ack",
+      "mustMatch": "send a team its next order only after its close turn has ended \\(its close ack, then its next status or an idle gap\\), so its \"state: closed\" is seen at a turn end \\(spec §4\\.6\\)\\.",
+      "invert": {
+        "find": "only after its close turn has ended",
+        "replace": "in the same message as your close"
       }
     }
   ]

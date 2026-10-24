@@ -24,7 +24,7 @@ afterAll(() => rmSync(ROOT, { recursive: true, force: true }));
 
 const SUITE = "test/review-brief.test.ts";
 const COPY = ["agents", "skills", "test", "package.json", ".gitignore"];
-const EXPECTED_TOTAL = 47;
+const EXPECTED_TOTAL = 49;
 
 const R = "agents/reviewer.md";
 const S = "agents/security-auditor.md";
@@ -118,9 +118,11 @@ const T6 = 'T6 no respawn: none of the five edited files contains "respawn"';
 const T7 = "T7 pointer: sisyphus rule 5 and atlas Phase 3 carry the exact pointer sentence with the $OMT_PLUGIN_DIR path";
 const H1 = "H1 hub-order section: one ## Hub-run orders between ## Communication style and ## Hard constraints in sisyphus.md, holding one marked block";
 const H20 = "H2.0 hub-order text: the block equals the plan text, in order";
-const hubNames = ["hub-run definition", "no ask, escalate or reply question", "decisions to the hub", "a relayed ruling is the tap", "forward verbatim with ts", "put the marker first", "the marker line", "outside a hub-run order"];
+const hubNames = ["hub-run definition", "no ask, escalate or reply question", "decisions to the hub", "a relayed ruling is the tap", "forward verbatim with ts", "put the marker first", "the marker line", "keep the state line", "outside a hub-run order"];
 const H2 = (n: number) => `H2.${n} hub-order line ${n}: ${hubNames[n - 1]}`;
 const H3 = "H3 atlas line: the HUB-RUN ORDER line sits directly after the :86 line under ## Communication in atlas.md";
+const ATLAS_STATE_LINE = "- Under a `HUB-RUN ORDER` prompt, keep a \"state:\" line in .sisyphus/now.md (the current step) and write \"state: CLOSED\" in the turn the hub's close message reaches you, before anything else.";
+const H5 = "H5 atlas state line: the now.md state line sits directly after the HUB-RUN ORDER line in atlas.md";
 const H4 = "H4 marker key: the sisyphus marker line starts with the HUB-RUN ORDER key the atlas line names";
 const G1 = "G1 gitignore: .gitignore has the line .sisyphus/";
 const G2 = "G2 base absent: git -C $REVIEW_BRIEF_BASE_REPO show 9d7c81a:<file> exits 0 with output for each of the five files, and none has a marker or a block line";
@@ -178,14 +180,16 @@ const MUTANTS: Mutant[] = [
   { name: "M30 atlas.md pointer line removed", edits: [patch(A, "\n" + POINTER_LINE + "\n", "")], mustFail: [T1, T7], mustFailWith: [T1, "does not follow the pointer line"] },
   { name: "M31 hub-order no escalate dropped", edits: [patch(Y, ", no `escalate`", "")], mustFail: [H20, H2(2)], mustFailWith: [H2(2), "occurs 0 times"] },
   { name: "M32 hub-order unscoped", edits: [patch(Y, "While a hub-run order is open, post no", "Post no")], mustFail: [H20, H2(2)], mustFailWith: [H20, "Post no"] },
-  { name: "M33 hub-order outside line deleted", edits: [patch(Y, hl(8) + "\n", "")], mustFail: [H20, H2(8)], mustFailWith: [H2(8), "occurs 0 times"] },
+  { name: "M33 hub-order outside line deleted", edits: [patch(Y, hl(9) + "\n", "")], mustFail: [H20, H2(9)], mustFailWith: [H2(9), "occurs 0 times"] },
+  { name: "M50 hub-order state line deleted", edits: [patch(Y, hl(8) + "\n", "")], mustFail: [H20, H2(8)], mustFailWith: [H2(8), "occurs 0 times"] },
+  { name: "M51 atlas.md state line removed", edits: [patch(A, ATLAS_STATE_LINE + "\n", "")], mustFail: [H5], mustFailWith: [H5, "occurs 0 times"] },
   { name: "M34 hub-order forward line deleted", edits: [patch(Y, hl(5) + "\n", "")], mustFail: [H20, H2(5)], mustFailWith: [H2(5), "occurs 0 times"] },
   { name: "M35 hub-order ts replaced by date -u", edits: [patch(Y, "with the message's own `ts` from its channel tag (a `date -u` stamp only if it has none)", "with a `date -u` stamp")], mustFail: [H20, H2(5)], mustFailWith: [H20, "team_message with a `date -u` stamp"] },
   { name: "M36 hub-order marker lines deleted", edits: [patch(Y, hl(6) + "\n" + hl(7) + "\n", "")], mustFail: [H20, H2(6), H2(7), H4], mustFailWith: [H2(6), "occurs 0 times"] },
   { name: "M37 sisyphus.md Hub-run orders moved to the top", edits: [patch(Y, "\n## Hub-run orders\n\n" + HUB, ""), patch(Y, SYS_TITLE, SYS_TITLE + "\n## Hub-run orders\n\n" + HUB)], mustFail: [H1], mustFailWith: [H1, "## Hub-run orders is not between"] },
-  { name: "M38 atlas.md HUB-RUN ORDER line removed", edits: [patch(A, ATLAS_LINE + "\n", "")], mustFail: [H3, H4], mustFailWith: [H3, "right after the :86 line occurs 0 times"] },
-  { name: "M39 atlas.md 3-failure escalation dropped", edits: [patch(A, ", including the escalation after 3 failures and the final status", "")], mustFail: [H3, G3], mustFailWith: [H3, "right after the :86 line occurs 0 times"] },
-  { name: "M40 atlas.md forward clause dropped", edits: [patch(A, " Forward any operator words to it verbatim.", "")], mustFail: [H3, G3], mustFailWith: [H3, "right after the :86 line occurs 0 times"] },
+  { name: "M38 atlas.md HUB-RUN ORDER line removed", edits: [patch(A, ATLAS_LINE + "\n", "")], mustFail: [H5, H3, H4], mustFailWith: [H3, "right after the :86 line occurs 0 times"] },
+  { name: "M39 atlas.md 3-failure escalation dropped", edits: [patch(A, ", including the escalation after 3 failures and the final status", "")], mustFail: [H5, H3, G3], mustFailWith: [H3, "right after the :86 line occurs 0 times"] },
+  { name: "M40 atlas.md forward clause dropped", edits: [patch(A, " Forward any operator words to it verbatim.", "")], mustFail: [H5, H3, G3], mustFailWith: [H3, "right after the :86 line occurs 0 times"] },
   { name: "M41 .gitignore loses .sisyphus/", edits: [patch(".gitignore", "\n.sisyphus/\n", "\n")], mustFail: [G1], mustFailWith: [G1, ".gitignore has no .sisyphus/ line"] },
   { name: "M42 base repo unreadable", edits: [setEnv("REVIEW_BRIEF_BASE_REPO", () => mkdtempSync(path.join(ROOT, "nogit-")))], mustFail: [G2, G3], mustFailWith: [G2, "failed: exit"] },
   { name: "M43 hub-order relayed-ruling line deleted", edits: [patch(Y, hl(4) + "\n", "")], mustFail: [H20, H2(4)], mustFailWith: [H2(4), "occurs 0 times"] },
@@ -199,7 +203,7 @@ const MUTANTS: Mutant[] = [
   },
   { name: "M47 reviewer.md stray partial tag", edits: [patch(R, "## Constraints\n", "## Constraints\n<partial>true or false</partial>\n")], mustFail: [G3], mustFailWith: [G3, "agents/reviewer.md differs from 9d7c81a outside its inserts"] },
   { name: "M48 SKILL.md stray route line in Step 1", edits: [patch(K, "## Step 1: Gather context\n", "## Step 1: Gather context\n" + ROUTE_LINE + "\n")], mustFail: [G3], mustFailWith: [G3, "skills/review-work/SKILL.md differs from 9d7c81a outside its inserts"] },
-  { name: "M49 atlas.md worker-marker clause dropped", edits: [patch(A, " Put the same `HUB-RUN ORDER` line first in every prompt you write for a worker.", "")], mustFail: [H3, G3], mustFailWith: [H3, "right after the :86 line occurs 0 times"] },
+  { name: "M49 atlas.md worker-marker clause dropped", edits: [patch(A, " Put the same `HUB-RUN ORDER` line first in every prompt you write for a worker.", "")], mustFail: [H5, H3, G3], mustFailWith: [H3, "right after the :86 line occurs 0 times"] },
 ];
 
 // ── the runner (corp-mode.control's pattern) ──
@@ -267,7 +271,7 @@ function run(edits: Edit[]): Result {
 describe("review-brief removal control", () => {
   let baseline: Result | null = null;
 
-  test("baseline: the unmutated copy passes all 47 tests, no skips, no repeated title (else HARNESS BROKEN)", () => {
+  test("baseline: the unmutated copy passes all 49 tests, no skips, no repeated title (else HARNESS BROKEN)", () => {
     baseline = run([]);
     expect({ failed: baseline.failed, skipped: baseline.skipped }).toEqual({ failed: [], skipped: [] });
     const all = [...baseline.passed, ...baseline.failed, ...baseline.skipped];
@@ -286,7 +290,7 @@ describe("review-brief removal control", () => {
       const inFiles = [R, S, K, Y, A].filter((f) => readFileSync(path.join(REPO, f), "utf-8").includes(m.mustFailWith[1]));
       expect({ mutant: m.name, text: m.mustFailWith[1], inFiles }).toEqual({ mutant: m.name, text: m.mustFailWith[1], inFiles: [] });
     }
-    expect(MUTANTS.length).toBe(49);
+    expect(MUTANTS.length).toBe(51);
   });
 
   for (const m of MUTANTS) {

@@ -98,6 +98,7 @@ After ALL tasks complete:
 - Report blockers immediately - don't wait
 - Ask the user when a decision is outside the plan's scope
 - If your prompt starts with `HUB-RUN ORDER`, every decision and report goes to the agent that spawned you, including the escalation after 3 failures and the final status: no `ask`, no `escalate`, no question to the operator by `reply`. Forward any operator words to it verbatim. Put the same `HUB-RUN ORDER` line first in every prompt you write for a worker.
+- Under a `HUB-RUN ORDER` prompt, keep a "state:" line in .sisyphus/now.md (the current step) and write "state: CLOSED" in the turn the hub's close message reaches you, before anything else.
 
 ## Constraints
 

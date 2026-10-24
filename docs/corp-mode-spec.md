@@ -1,4 +1,4 @@
-# Corp mode spec — v2.4-lab.2 (AI.Lab copy)
+# Corp mode spec — v2.4-lab.3 (AI.Lab copy)
 
 AI.Lab copy for #25 (WO-027) of v2.4 (sha1 214952dc). Self-contained: §0a carries the
 flow-spec rules it relies on (flow spec v1.2.2, sha1 1cac472e), so the lab hub needs no
@@ -69,6 +69,7 @@ answer key the spec arm must not see).
   - §4.3 Ledger: minimum shape (the WO-025 form, plus the lab's live-paths line)
   - §4.4 Artifact locations (pinned)
   - §4.5 Naming
+  - §4.6 Context hook (hooks/ledger-compact.js)
 - §5 Tiering
   - §5.1 The rule
   - §5.2 Signals and examples
@@ -98,7 +99,7 @@ COMMIT_SIGNOFF → §1.10; operator merge → §1.11; CLOSED → §1.13.
 | §1.10 Signoff and commit | §1.10, §0a, §1.8, §2.2, §2.3, §4.2 |
 | §1.11 PR and merge | §1.11, §2.2, §3.5, §4.2 |
 | §1.12 Release (the extension, so far) | §1.12, §1.10, §2.1, §2.2, §2.3, §4.1, §4.2, §4.3 |
-| §1.13 Close and housekeeping | §1.13, §4.3, §4.4 |
+| §1.13 Close and housekeeping | §1.13, §4.3, §4.4, §4.6 |
 | §2.1 Gate table (rows are not in a fixed order; see §3.5 for live-first vs commit-first) | §2.1, §0, §3.5 |
 | §2.2 What needs an operator tap | §2.2, §0a, §1.2, §1.5, §1.9, §3.3, §4.2, §5, §5.2 |
 | §2.3 What the push ask must say | §2.3, §2.4 |
@@ -639,7 +640,8 @@ fixed (§3). Each node lists **owner**, **needs**, **makes**, and **seen in**.
 - **Context reset at CLOSED.** After writing CLOSED, the hub's status to the operator ends
   with one line: "Context reset: run /clear in the hub session (or /compact with the Now block
   as instructions); the next order starts from the ledgers and standing.md either way". The
-  hub goes on without waiting; the context hook (a later issue) will do the reset itself.
+  hub goes on without waiting; hooks/ledger-compact.js rebuilds the context from the ledger at
+  the end of the turn that wrote CLOSED (§4.6), so the /clear line is a fallback.
 
 ---
 
@@ -866,7 +868,8 @@ Hub reads the state first so nothing surprises. Case: "~/.omtv/hub-registry.json
   - numbered steps with the gates;
   - who drives the live check;
   - "No commit until COMMIT_SIGNOFF";
-  - "keep .sisyphus/now.md" (order, plan sha1, current step, blocked-on, next step);
+  - "keep .sisyphus/now.md with a state: line" (order, plan sha1, state, current step,
+    blocked-on, next step; state: CLOSED on the hub's close message);
   - "Ack first".
 
   Case: WO-025 [ev:3681]; S-tier case WO-024 [ev:3660].
@@ -916,6 +919,11 @@ Pending taps: <what>, or "none". Next: <action>. Evidence: <paths>.
   their words, tier, state, what hub waits for and since when, open asks with their tokens,
   pending taps, the next action and where the evidence is. The Log below stays append-only.
   An agent whose context was compacted or cleared resumes from the Now block, not from memory, then re-reads §0a and the current step's mapped sections.
+- **State for the hook:** a State value that starts with CLOSED, in any case, means the order
+  is closed, any other value open, and any change of the value is a step boundary; the hub's
+  ledger is the highest-numbered LWO file whose State does not start with CLOSED; a team's
+  now.md carries a `state:` line in the same form, CLOSED at the end (§4.6). The first line
+  that holds a State key wins; on that line the last key wins.
 - **Numbering:** an LWO number is assigned when `<vault>/lab/tasks/LWO-NNN-<slug>.md` is
   created: the next after the highest existing file, from LWO-001. Ledger files are the only
   source. Never a Corp WO number. `mkdir -p "<vault>/lab/tasks"` for the first one. Corp's
@@ -931,8 +939,8 @@ Pending taps: <what>, or "none". Next: <action>. Evidence: <paths>.
 | Spike / DONE reports | `<vault>/lab/artifacts/<lwo-nnn>-<kind>.md` |
 | Live-run records | `~/.omt-scratch/lab-<team>/<run>/` (the `lab-` prefix keeps lab runs apart from Corp's) |
 | Standing rulings | `<vault>/lab/standing.md`: one line per ruling that outlives an order, ending with the order and time that made it, then a `## Open` list of pending proposals and follow-ups; hub appends after the operator's tap; a later line supersedes an earlier one by quoting it; hub reads it at the start of every order; it and the ledger's Now block are notes, never a tap, and relax no rule |
-| Team's current state | `<repo>/.sisyphus/now.md`: order, plan sha1, current step, blocked-on, next step; the team rewrites it at every step; never staged |
-| Context-size log | `~/.omt-scratch/lab-ctx/<session>-<inst>-<YYYYMMDD>[-<part>].jsonl`, one JSON line per turn and per compaction (`hooks/ctx-log.js`) |
+| Team's current state | `<repo>/.sisyphus/now.md` (the session root): order, plan sha1, state, current step, blocked-on, next step; the team rewrites it at every step and writes `state: CLOSED` on the hub's close message; never staged |
+| Context-size log | `~/.omt-scratch/lab-ctx/<session>-<inst>-<YYYYMMDD>[-<part>].jsonl`, one JSON line per turn and per compaction (`hooks/ctx-log.js`), and the context hook's hold, holds, rebuild, reconcile and pass lines (`hooks/ledger-compact.js`, §4.6) |
 | Scoping text | the issue comment |
 
 ### 4.5 Naming
@@ -940,6 +948,25 @@ Pending taps: <what>, or "none". Next: <action>. Evidence: <paths>.
 - **LWO-NNN:** §4.3 (lab orders; Corp's WO numbers appear only as evidence).
 - **Branches:** §1.6.
 - **Ask tokens:** 8 hex characters.
+
+### 4.6 Context hook (hooks/ledger-compact.js)
+- **What it does.** On a compaction of a lab session's main conversation the hook reads the
+  session's Now blocks (the hub: its open ledgers' Now blocks; a team: `.sisyphus/now.md` in the
+  session root). While that order is open and the block changed within the last 30 main turns,
+  the conversation is not summarised: an idle compaction, one at or above 90% of the window, a
+  step boundary at or above 30% and CLOSED are rebuilt from the ledger (one note with the Now
+  block, standing.md and this spec's contents and reading map, then the last 12 rows, up to 24 to
+  keep a tool group whole); an automatic compaction inside a turn below 90% is held only when
+  Claude Code's own size figure is known, and rebuilt otherwise.
+  The hooks of one plugin nest in registration order, so ctx-log logs every rebuild with after: null.
+- **Passes through:** a manual /compact, sub-agents, teammates, a closed or stale order (a stale
+  one gets a RECONCILE line first) and a session without a Now block. The file
+  `~/.omt-scratch/lab-ctx/ledger-compact.off` turns it off. It logs to the context-size log (§4.4).
+- **Safety net:** until the review below, the normal summary still runs at a rebuild, told to
+  record only what differs from the Now block, and is kept after the note.
+- **Review:** the hub re-reads these numbers (30%, 90%, K=12) and turns the safety net off at the
+  first order start after 2026-11-07, with the lab-ctx log, unless the operator rules otherwise;
+  any change to the numbers goes to the operator.
 
 ---
 
@@ -1265,6 +1292,17 @@ shared data contract, run as one order with two sides. This spec doesn't design 
 waits until the single-item flow has passed §7.
 
 ---
+
+## Changes v2.4-lab.2 → v2.4-lab.3
+- 2026-10-24, #66 (LWO-019): deterministic context management, part 3 (the hook). §1.13: the
+  context reset at CLOSED is done by hooks/ledger-compact.js (§4.6); the /clear line stays as a
+  fallback. §4.1 and §4.4: now.md carries a `state:` line, CLOSED on the hub's close message.
+  §4.3: the State rule the hook reads. §4.4: the hook's log lines. New §4.6 with its review date
+  (2026-11-07). The contents and the §1.13 reading-map row list §4.6.
+- Pins moved: the header (lab.2 → lab.3) in DOC_TITLE and rewrite r1; additions a-113-4,
+  a-41-now, a-44-now and a-44-ctxlog; ADDITION_COUNT, EXPECTED_TOTAL, the fixtures-pinned title
+  and ROW_IDS for hub.md rows 9 (moved) and 30 (new); g2-edge-changelog re-anchored on this
+  heading.
 
 ## Changes v2.4-lab.1 → v2.4-lab.2
 - 2026-10-13, #37 (LWO-007): deterministic context management, part 1 (spec and measure).

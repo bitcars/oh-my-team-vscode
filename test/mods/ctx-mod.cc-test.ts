@@ -31,7 +31,7 @@ const logs: string[] = [] // $.ui.log lines, per test (cleared by setup)
 function setup(on: any, o: Opts = {}) {
   const clock = mock.clock(on)
   const box = {
-    env: { ...(o.env ?? ENV) } as Record<string, string>,
+    env: { OMT_LEDGER_COMPACT: 'off', ...(o.env ?? ENV) } as Record<string, string>, // ledger-compact (#66) off unless a test turns it on
     usage: o.usage ?? U,
     step: stepResult(0, null),
     compact: { messages: KEPT } as unknown,
@@ -469,4 +469,36 @@ test('M16 a report that finishes after a newer one is dropped, and dedupe follow
   await clock.settle()
   const ats = posts.map((p) => p.body.at)
   expect([posts.map((p) => p.body.agents.running), ats.every((a, i) => i === 0 || a > ats[i - 1])]).toEqual([[1, 0], true])
+})
+
+// ── with ledger-compact on (#66, plan v4.2 §5.3) ───────────────────────────
+
+test('M-lc with ledger-compact on: it ran (its read of now.md), the posts are the same as with it off, complete() and a manual compaction keep their answers, and its only line is pass/manual', async ($, on) => {
+  const NOWMD = '/root/.sisyphus/now.md'
+  const reads: string[] = []
+  const writes: string[] = []
+  const { clock, posts, box } = setup(on, { env: { ...ENV, HOME: '/home/lab', OMT_LEDGER_COMPACT: 'on' } })
+  on('session.root', async () => ({ value: '/root' }))
+  on('fs.exists', async (_$: any, e: any) => ({ value: e.path === NOWMD }))
+  on('fs.read', async (_$: any, e: any) => {
+    reads.push(e.path)
+    if (e.path === NOWMD) return { value: '# Now\nstate: IMPLEMENT\n' }
+    throw new Error('ENOENT: ' + e.path)
+  })
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => {
+    throw new Error('ENOENT')
+  })
+  on('session.messages', async () => ({ value: KEPT }))
+  on('fs.write', async (_$: any, e: any) => {
+    writes.push(e.text)
+    return { value: undefined }
+  })
+  box.step = stepResult(0, usage(2, 36082, 215, 'claude-opus-5-5', 74))
+  await runStep($)
+  const r1 = await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  const r2 = await $.session.compact({ trigger: 'manual', messages: KEPT })
+  await clock.settle()
+  const ours = (writes[writes.length - 1] ?? '').split('\n').filter((l) => l !== '').map((l) => JSON.parse(l)).filter((l) => l.kind !== 'turn' && l.kind !== 'compact')
+  expect([reads.includes(NOWMD), posts.map((p) => p.body.ctx?.tokens ?? null).filter((t) => t !== null)[0], r1, r2.messages, ours.map((l) => [l.kind, l.reason])]).toEqual([true, 36299, { text: '' }, KEPT, [['pass', 'manual']]])
 })
