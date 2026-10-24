@@ -25,7 +25,7 @@ const logs: string[] = []
 function setup(on: any, o: Opts = {}) {
   const clock = mock.clock(on, { now: o.now ?? DAY_D })
   const box = {
-    env: { ...(o.env ?? ENV) } as Record<string, string>,
+    env: { OMT_LEDGER_COMPACT: 'off', ...(o.env ?? ENV) } as Record<string, string>, // ledger-compact (#66) off unless a test turns it on
     step: stepResult(null) as unknown,
     compact: { messages: KEPT } as unknown,
     compactIn: [] as unknown[],
@@ -495,4 +495,99 @@ test('L24 every line carries the same 6-character base36 inst, and so does the f
   const ls = lines(last(writes))
   const inst = ls[0].inst
   expect([/^[0-9a-z]{6}$/.test(inst), ls.every((l) => l.inst === inst), last(writes).path.includes(`-${inst}-`)]).toEqual([true, true, true])
+})
+
+// ── lines written for ledger-compact through record() (#66, plan v4.2 §5.3) ──
+
+const NOWMD = '/root/.sisyphus/now.md'
+const LC_ENV = { SESSION_NAME: 'lab1', HOME, OMT_LEDGER_COMPACT: 'on' }
+/** ledger-compact on: a team session whose now.md says state: IMPLEMENT, no off file. */
+function lcWorld(on: any, reads: string[]) {
+  on('session.root', async () => ({ value: '/root' }))
+  on('fs.exists', async (_$: any, e: any) => ({ value: e.path === NOWMD }))
+  on('fs.read', async (_$: any, e: any) => {
+    reads.push(e.path)
+    if (e.path === NOWMD) return { value: '# Now\nstate: IMPLEMENT\n' }
+    throw new Error('ENOENT: ' + e.path)
+  })
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => {
+    throw new Error('ENOENT')
+  })
+  on('session.messages', async () => ({ value: KEPT }))
+}
+
+test("L26 record writes one line with ctx-log's v/at/session/inst, in the same file as the turn lines", async ($, on) => {
+  const reads: string[] = []
+  const { clock, writes } = setup(on, { env: LC_ENV })
+  lcWorld(on, reads)
+  await complete($)
+  await compact($)
+  await clock.settle()
+  const ls = lines(last(writes))
+  const turnLine = ls.find((l) => l.kind === 'turn')
+  const passLine = ls.find((l) => l.kind === 'pass')
+  expect([passLine && [passLine.v, passLine.at, passLine.session, passLine.inst === turnLine.inst, passLine.agentId, passLine.reason], new Set(writes.map((w) => w.path)).size]).toEqual([[1, '2026-10-13T10:00:00.000Z', 'lab1', true, null, 'manual'], 1])
+})
+
+test('L26b record before any ctx-log hook ran: the first event, a manual compaction, still writes its pass line', async ($, on) => {
+  const reads: string[] = []
+  const { clock, writes } = setup(on, { env: LC_ENV })
+  lcWorld(on, reads)
+  await compact($)
+  await clock.settle()
+  expect(lines(last(writes)).map((l) => [l.kind, l.reason ?? null])).toEqual([
+    ['pass', 'manual'],
+    ['compact', null],
+  ])
+})
+
+test('L27 mixed kinds share the 64-line queue and the dropped count: 32 manual compactions (64 lines) all go out, the 33rd pair is dropped, the next line carries dropped:2', async ($, on) => {
+  const reads: string[] = []
+  const release: (() => void)[] = []
+  const { clock, writes } = setup(on, {
+    env: LC_ENV,
+    fsWrite: () =>
+      new Promise((resolve) => {
+        release.push(() => resolve({ value: undefined }))
+      }),
+  })
+  lcWorld(on, reads)
+  for (let i = 1; i <= 33; i++) {
+    await compact($)
+    await clock.settle()
+  }
+  while (release.length) {
+    release.shift()!()
+    await clock.settle()
+  }
+  await compact($)
+  await clock.settle()
+  while (release.length) {
+    release.shift()!()
+    await clock.settle()
+  }
+  const all = lines(last(writes))
+  expect([all.length, all.filter((l) => l.dropped).map((l) => l.dropped)]).toEqual([66, [2]])
+})
+
+test('L-lc with ledger-compact on: it ran (its read of now.md), complete() is the bottom’s answer, a manual compaction returns KEPT, and the lines are turn, pass/manual, compact', async ($, on) => {
+  const reads: string[] = []
+  const { clock, writes, box } = setup(on, { env: LC_ENV })
+  lcWorld(on, reads)
+  box.compact = { messages: KEPT }
+  const r1 = await complete($)
+  const r2 = await compact($)
+  await clock.settle()
+  expect([box.env.OMT_LEDGER_COMPACT, reads.includes(NOWMD), r1, r2.messages, lines(last(writes)).map((l) => [l.kind, l.reason ?? null])]).toEqual([
+    'on',
+    true,
+    { text: '' },
+    KEPT,
+    [
+      ['turn', null],
+      ['pass', 'manual'],
+      ['compact', null],
+    ],
+  ])
 })

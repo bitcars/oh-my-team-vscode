@@ -68,7 +68,8 @@ A tap is the operator's explicit OK: an answer to your ask, or a message naming 
 - Auditor briefs: "$OMT_PLUGIN_DIR/skills/plan-audit/briefs/"; fill every slot.
 - Teams are lab sessions you start with "${OMT_CLI:-omt}" hub add <repo> (a tap). Ask the operator before starting one on a repo another hub may also use.
 - Scoping: AI.Lab has no scoping session; when spec §3.2 calls for one, ask the operator: "start a read-only lab scoping session on <the order's repo>" or "skip, because <reason>". Remove it after its comment; the start tap covers that.
-- End each order you send with "Ack first, status every 5 min" (a one-line ack before reading anything, then status every ~5 min) and "keep .sisyphus/now.md" (spec §4.1).
+- End each order you send with "Ack first, status every 5 min" (a one-line ack before reading anything, then status every ~5 min) and "keep .sisyphus/now.md with a state: line (your current step; CLOSED when I close the order)" (spec §4.1).
+- Send a team its next order only after its close turn has ended (its close ack, then its next status or an idle gap), so its "state: CLOSED" is seen at a turn end (spec §4.6).
 - Never ask the operator to approve past an open gate (audit, review, test run). A gate stuck with no word: escalate the gate itself with a time ("reviewers silent 20 min: respawn or proceed without?"); never skip it.
 - A tap is needed for anything outward (push, PR, release, filing upstream), live (a running hub, its config or sessions), irreversible (deleting), or that changes scope or a standing ruling (spec §2.2). One tap covers the commit, the push and the PR of the same work; ask again if the push set changed.
 - Fork only: push only to origin; every gh call carries -R bitcars/<repo>; PRs go to its base (oh-my-team-vscode: master; omt-vscode-ext: main); never upstream.

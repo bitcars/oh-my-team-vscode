@@ -22,7 +22,7 @@ import path from "node:path";
 setDefaultTimeout(120_000);
 
 const REPO = path.resolve(import.meta.dir, "..");
-const COPY = ["hooks/ctx-log.js", "hooks/ctx-mod.js", "hooks/mods.js", "hooks/hooks.json", "hooks/status-hook.sh", "test/ctx-log.test.ts", "test/mods/ctx-log.cc-test.ts", "test/omt-harness.ts"];
+const COPY = ["hooks/ctx-log.js", "hooks/ctx-mod.js", "hooks/ledger-compact.js", "hooks/mods.js", "hooks/hooks.json", "hooks/status-hook.sh", "test/ctx-log.test.ts", "test/mods/ctx-log.cc-test.ts", "test/omt-harness.ts"];
 const MOD = "hooks/ctx-log.js";
 const WRAPPER = "test/ctx-log.test.ts";
 
@@ -64,9 +64,31 @@ const T22 = "L22 a line enqueued after the first hook returned is written when t
 const T23 = "L23 a non-ASCII session name is escaped, so the line's length equals its UTF-8 byte count";
 const T24 = "L24 every line carries the same 6-character base36 inst, and so does the filename";
 const VALIDATE = "validate: the mod's hooks, calls, env reads and env writes are exactly the plan's";
-const MODSJS = "the real hooks.json loads ./mods.js, and mods.js registers ctx-mod and ctx-log";
+const MODSJS = "the real hooks.json loads ./mods.js, and mods.js registers ctx-mod, ctx-log and ledger-compact";
 
+const T26 = "L26 record writes one line with ctx-log's v/at/session/inst, in the same file as the turn lines";
+const T27 = "L27 mixed kinds share the 64-line queue and the dropped count: 32 manual compactions (64 lines) all go out, the 33rd pair is dropped, the next line carries dropped:2";
+const TLC = "L-lc with ledger-compact on: it ran (its read of now.md), complete() is the bottom\u2019s answer, a manual compaction returns KEPT, and the lines are turn, pass/manual, compact";
 const MUTANTS: Mutant[] = [
+  {
+    name: "X44 (plan X38) ledger-compact-extra-line: its turn.complete records one extra line on every turn (#66)",
+    file: "hooks/ledger-compact.js",
+    patches: [["  on('turn.complete', { turnId: /./ }, async ($, e, next) => {\n    const r = await next(e)\n", "  on('turn.complete', { turnId: /./ }, async ($, e, next) => {\n    const r = await next(e)\n    log($, { kind: 'pass', reason: 'x38' })\n"]],
+    mustFail: [TLC],
+    mustPass: [T9],
+  },
+  {
+    name: "X45 (plan X59) record-without-stamps: record writes a line with no v/at/session/inst (#66)",
+    patches: [["  const line = { v: 1, at, session: g.name, inst, agentId: null }\n", "  const line = { agentId: null }\n"]],
+    mustFail: [T26],
+    mustPass: [T1],
+  },
+  {
+    name: "X46 (plan X60b) record-private-queue: record queues past MAX_PENDING and the dropped count (#66)",
+    patches: [["  enqueue($, g, line)\n  return !off", "  queue.push({ day: utcDay(line.at), text: ascii(line) + '\\n' })\n  if (!draining) draining = drain($, g)\n  return !off"]],
+    mustFail: [T27],
+    mustPass: [T1],
+  },
   {
     name: "X1 turn-not-logged: turn.complete enqueues nothing",
     patches: [["      enqueue($, g, { v: 1, at, session: g.name, inst, agentId: e.agentId ?? null, kind: 'turn', tokens, window })\n", ""]],

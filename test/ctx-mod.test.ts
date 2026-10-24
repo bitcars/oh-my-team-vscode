@@ -67,6 +67,7 @@ const TITLES = [
   "M16 a report that finishes after a newer one is dropped, and dedupe follows the newer one",
   "M17 a report the router refuses is logged once, not swallowed",
   "M18 a 404 (the session not registered yet) is not logged and leaves the warning for a real refusal",
+  "M-lc with ledger-compact on: it ran (its read of now.md), the posts are the same as with it off, complete() and a manual compaction keep their answers, and its only line is pass/manual",
 ];
 
 const HOOKS = ["turn.step", "session.measure", "turn.complete", "session.compact", "session.end"];
@@ -88,7 +89,7 @@ try {
     path.join(plugin, ".claude-plugin", "plugin.json"),
     JSON.stringify({ name: "ctx-mod-kit", version: "0.0.0", description: "ctx-mod kit run", author: { name: "oh-my-team" } })
   );
-  for (const f of ["hooks.json", "status-hook.sh", "mods.js", "ctx-log.js"]) copyFileSync(path.join(HOOKS_DIR, f), path.join(plugin, "hooks", f));
+  for (const f of ["hooks.json", "status-hook.sh", "mods.js", "ctx-log.js", "ledger-compact.js"]) copyFileSync(path.join(HOOKS_DIR, f), path.join(plugin, "hooks", f));
   copyFileSync(MOD, path.join(plugin, "hooks", "ctx-mod.js"));
   copyFileSync(KIT, path.join(plugin, "tests", "ctx-mod.test.ts"));
   for (const d of [".claude-plugin", "hooks"]) mkdirSync(path.join(validatePlugin, d));

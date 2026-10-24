@@ -21,7 +21,7 @@ import path from "node:path";
 setDefaultTimeout(120_000);
 
 const REPO = path.resolve(import.meta.dir, "..");
-const COPY = ["hooks/ctx-mod.js", "hooks/ctx-log.js", "hooks/mods.js", "hooks/hooks.json", "hooks/status-hook.sh", "test/ctx-mod.test.ts", "test/mods/ctx-mod.cc-test.ts", "test/omt-harness.ts"];
+const COPY = ["hooks/ctx-mod.js", "hooks/ctx-log.js", "hooks/ledger-compact.js", "hooks/mods.js", "hooks/hooks.json", "hooks/status-hook.sh", "test/ctx-mod.test.ts", "test/mods/ctx-mod.cc-test.ts", "test/omt-harness.ts"];
 const MOD = "hooks/ctx-mod.js";
 const WRAPPER = "test/ctx-mod.test.ts";
 
@@ -71,7 +71,15 @@ const M18 = "M18 a 404 (the session not registered yet) is not logged and leaves
 const SANDBOX = "sandbox honoured: validate wrote its config under the temp CLAUDE_CONFIG_DIR, not ~/.claude.json";
 const VALIDATE = "validate: the mod's hooks, calls, env reads and env writes are exactly the plan's";
 
+const MLC = "M-lc with ledger-compact on: it ran (its read of now.md), the posts are the same as with it off, complete() and a manual compaction keep their answers, and its only line is pass/manual";
 const MUTANTS: Mutant[] = [
+  {
+    name: "X38 ledger-compact-extra-line: its turn.complete records one extra line on every turn (#66)",
+    file: "hooks/ledger-compact.js",
+    patches: [["  on('turn.complete', { turnId: /./ }, async ($, e, next) => {\n    const r = await next(e)\n", "  on('turn.complete', { turnId: /./ }, async ($, e, next) => {\n    const r = await next(e)\n    log($, { kind: 'pass', reason: 'x38' })\n"]],
+    mustFail: [MLC],
+    mustPass: [M1a],
+  },
   {
     name: "gate-session-only: ROUTER_URL is not checked",
     patches: [["    if (!session || !isLocalUrl(router)) return\n", "    if (!session) return\n"]],

@@ -272,12 +272,22 @@
   {
     "id": "a-113-4",
     "where": "§1.13",
-    "present": "^  hub goes on without waiting; the context hook \\(a later issue\\) will do the reset itself\\.$"
+    "present": "^  hub goes on without waiting; hooks\\/ledger-compact\\.js rebuilds the context from the ledger at$"
+  },
+  {
+    "id": "a-113-5",
+    "where": "§1.13",
+    "present": "^  the end of the turn that wrote CLOSED \\(§4\\.6\\), so the \\/clear line is a fallback\\.$"
   },
   {
     "id": "a-41-now",
     "where": "§4.1",
-    "present": "^  - \"keep \\.sisyphus\\/now\\.md\" \\(order, plan sha1, current step, blocked-on, next step\\);$"
+    "present": "^  - \"keep \\.sisyphus\\/now\\.md with a state: line\" \\(order, plan sha1, state, current step,$"
+  },
+  {
+    "id": "a-41-now-2",
+    "where": "§4.1",
+    "present": "^    blocked-on, next step; state: CLOSED on the hub's close message\\);$"
   },
   {
     "id": "a-43-now-head",
@@ -332,16 +342,136 @@
   {
     "id": "a-44-now",
     "where": "§4.4",
-    "present": "^\\| Team's current state \\| `<repo>\\/\\.sisyphus\\/now\\.md`: order, plan sha1, current step, blocked-on, next step; the team rewrites it at every step; never staged \\|$"
+    "present": "^\\| Team's current state \\| `<repo>\\/\\.sisyphus\\/now\\.md` \\(the session root\\): order, plan sha1, state, current step, blocked-on, next step; the team rewrites it at every step and writes `state: CLOSED` on the hub's close message; never staged \\|$"
   },
   {
     "id": "a-44-ctxlog",
     "where": "§4.4",
-    "present": "^\\| Context-size log \\| `~\\/\\.omt-scratch\\/lab-ctx\\/<session>-<inst>-<YYYYMMDD>\\[-<part>\\]\\.jsonl`, one JSON line per turn and per compaction \\(`hooks\\/ctx-log\\.js`\\) \\|$"
+    "present": "^\\| Context-size log \\| `~\\/\\.omt-scratch\\/lab-ctx\\/<session>-<inst>-<YYYYMMDD>\\[-<part>\\]\\.jsonl`, one JSON line per turn and per compaction \\(`hooks\\/ctx-log\\.js`\\), and the context hook's hold, holds, rebuild, reconcile and pass lines \\(`hooks\\/ledger-compact\\.js`, §4\\.6\\) \\|$"
   },
   {
     "id": "a-79-selective",
     "where": "§7.9",
     "present": "^  to read the spec, neither in full \\(lab\\.1\\) nor by its reading map \\(lab\\.2\\)\\.$"
+  },
+  {
+    "id": "a-43-hook-1",
+    "where": "§4.3",
+    "present": "^- \\*\\*State for the hook:\\*\\* a State value that starts with CLOSED, in any case, means the order$"
+  },
+  {
+    "id": "a-43-hook-2",
+    "where": "§4.3",
+    "present": "^  is closed, any other value open, and any change of the value is a step boundary; the hub's$"
+  },
+  {
+    "id": "a-43-hook-3",
+    "where": "§4.3",
+    "present": "^  ledger is the highest-numbered LWO file whose State does not start with CLOSED; a team's$"
+  },
+  {
+    "id": "a-43-hook-4",
+    "where": "§4.3",
+    "present": "^  now\\.md carries a `state:` line in the same form, CLOSED at the end \\(§4\\.6\\)\\. The first line$"
+  },
+  {
+    "id": "a-43-hook-5",
+    "where": "§4.3",
+    "present": "^  that holds a State key wins; on that line the last key wins\\.$"
+  },
+  {
+    "id": "a-46-0",
+    "where": "§4.6",
+    "present": "^### 4\\.6 Context hook \\(hooks\\/ledger-compact\\.js\\)$"
+  },
+  {
+    "id": "a-46-1",
+    "where": "§4.6",
+    "present": "^- \\*\\*What it does\\.\\*\\* On a compaction of a lab session's main conversation the hook reads the$"
+  },
+  {
+    "id": "a-46-2",
+    "where": "§4.6",
+    "present": "^  session's Now blocks \\(the hub: its open ledgers' Now blocks; a team: `\\.sisyphus\\/now\\.md` in the$"
+  },
+  {
+    "id": "a-46-3",
+    "where": "§4.6",
+    "present": "^  session root\\)\\. While that order is open and the block changed within the last 30 main turns,$"
+  },
+  {
+    "id": "a-46-4",
+    "where": "§4.6",
+    "present": "^  the conversation is not summarised: an idle compaction, one at or above 90% of the window, a$"
+  },
+  {
+    "id": "a-46-5",
+    "where": "§4.6",
+    "present": "^  step boundary at or above 30% and CLOSED are rebuilt from the ledger \\(one note with the Now$"
+  },
+  {
+    "id": "a-46-6",
+    "where": "§4.6",
+    "present": "^  block, standing\\.md and this spec's contents and reading map, then the last 12 rows, up to 24 to$"
+  },
+  {
+    "id": "a-46-7",
+    "where": "§4.6",
+    "present": "^  keep a tool group whole\\); an automatic compaction inside a turn below 90% is held only when$"
+  },
+  {
+    "id": "a-46-8",
+    "where": "§4.6",
+    "present": "^  Claude Code's own size figure is known, and rebuilt otherwise\\.$"
+  },
+  {
+    "id": "a-46-9",
+    "where": "§4.6",
+    "present": "^  The hooks of one plugin nest in registration order, so ctx-log logs every rebuild with after: null\\.$"
+  },
+  {
+    "id": "a-46-10",
+    "where": "§4.6",
+    "present": "^- \\*\\*Passes through:\\*\\* a manual \\/compact, sub-agents, teammates, a closed or stale order \\(a stale$"
+  },
+  {
+    "id": "a-46-11",
+    "where": "§4.6",
+    "present": "^  one gets a RECONCILE line first\\) and a session without a Now block\\. The file$"
+  },
+  {
+    "id": "a-46-12",
+    "where": "§4.6",
+    "present": "^  `~\\/\\.omt-scratch\\/lab-ctx\\/ledger-compact\\.off` turns it off\\. It logs to the context-size log \\(§4\\.4\\)\\.$"
+  },
+  {
+    "id": "a-46-13",
+    "where": "§4.6",
+    "present": "^- \\*\\*Safety net:\\*\\* until the review below, the normal summary still runs at a rebuild, told to$"
+  },
+  {
+    "id": "a-46-14",
+    "where": "§4.6",
+    "present": "^  record only what differs from the Now block, and is kept after the note\\.$"
+  },
+  {
+    "id": "a-46-15",
+    "where": "§4.6",
+    "present": "^- \\*\\*Review:\\*\\* the hub re-reads these numbers \\(30%, 90%, K=12\\) and turns the safety net off at the$"
+  },
+  {
+    "id": "a-46-16",
+    "where": "§4.6",
+    "present": "^  first order start after 2026-11-07, with the lab-ctx log, unless the operator rules otherwise;$"
+  },
+  {
+    "id": "a-46-17",
+    "where": "§4.6",
+    "present": "^  any change to the numbers goes to the operator\\.$"
+  },
+  {
+    "id": "a-toc-46",
+    "where": "contents",
+    "present": "^  - §4\\.6 Context hook \\(hooks\\/ledger-compact\\.js\\)$"
   }
 ]

@@ -394,6 +394,34 @@ Adding a new platform = one adapter file (~150 lines) implementing the `ChannelA
 
 > **Note**: Channels are a Claude Code research preview feature. Custom channels require the `--dangerously-load-development-channels` flag.
 
+## Ledger-compact hook (AI.Lab)
+
+`hooks/ledger-compact.js` (#66) decides what happens when Claude Code compacts a lab session's main conversation while an order is open. It reads the session's Now block: for the hub, the highest-numbered open ledger in `<vault>/lab/tasks/`; for a team, `.sisyphus/now.md` in the session root. Teams working in a worktree keep `now.md` in the session root, with a `state:` line (their current step; `state: CLOSED` on the hub's close message).
+
+**What is rebuilt.** Instead of a model-written summary, the conversation becomes one note plus the last 12 rows (up to 24, so a tool call and its result stay together). The note holds the Now block (for the hub, every open ledger's, highest first), `lab/standing.md`, and the spec's contents and reading map. Its first line reads `LEDGER REBUILD by hooks/ledger-compact.js (<reason>): …`. A rebuild happens:
+- at an idle compaction (Claude Code compacts a 200k+ conversation left idle for about 54 minutes);
+- at or above 90% of the window;
+- at a step boundary (the ledger's `State:` changed) at or above 30%;
+- at CLOSED.
+
+**What is held.** An automatic compaction inside a turn below 90% is refused, with one line: `ledger-compact: held at <pct>% (<tokens>) < guard 90% while LWO-NNN is open (State: <state>); /compact still runs`. It is held only when Claude Code's own size figure is known; otherwise it is rebuilt. At default settings Claude Code's own threshold sits near 97%, so a hold shows only with a lowered threshold.
+
+**What passes through.** A manual `/compact` always runs as usual. So do sub-agents, agent-team teammates, a closed order, a stale Now block (one that has not changed for 30 main turns: the normal summary runs, with a `RECONCILE` line first), and any session without a Now block.
+
+**Safety net.** Until the review on 2026-11-07 (see the spec, §4.6), each rebuild still runs the normal summary, told to record only what differs from the Now block, and keeps it after the note. It is the constant `SAFETY_NET` in `hooks/ledger-compact.js`; nothing turns it off by itself. At the first order start after 2026-11-07 the hub re-reads the numbers with the lab-ctx log and brings the flip to `false` (a one-line change, issue first) to the operator.
+
+**Turning it off.** `touch ~/.omt-scratch/lab-ctx/ledger-compact.off` turns it off for every lab session at the next compaction; delete the file to turn it back on. The env variable `OMT_LEDGER_COMPACT=off` works too, but a session only gets it from the tmux server's environment at server start (`bin/omt-profile.sh` passes an explicit env list). When it is off there are no `hold`, `rebuild`, `reconcile` or `pass` lines in the log.
+
+**Reading the log.** Its decisions are lines in the context-size log, next to ctx-log's own:
+
+```bash
+jq -c 'select(.kind=="hold" or .kind=="holds" or .kind=="rebuild" or .kind=="reconcile" or .kind=="pass")' ~/.omt-scratch/lab-ctx/*.jsonl
+```
+
+Fields: `kind`, `trigger`, `reason` (idle, guard, step, closed, repeat, no-engine-size, below-guard, manual, plugin, no-now, no-state, read-error, abandoned, stale, hook-error, guard-no-gain, rebuild-size, retry-dropped, read-set, own-skip, stale-settle, compact-rejected), `tokens`, `window`, `source`, `spec` (the spec path read: the checkout's, from `OMT_PLUGIN_DIR`), `state`, `k` (rows kept; `k:0` means the latest message was not kept), `net` (1, or `unrecognised` when the summary was not used), `noteSha1` and `noteHead` on a rebuild, `others` (other open ledgers), `dupes`, `capped`, `count`/`key` on a `holds` line, `for` (the reason a rebuild-size, retry-dropped, own-skip or abandoned line refers to), `tries`, `err`, `standing` (the standing.md path), `id` (our call's number) and `skip` (our own skip text). ctx-log's `compact` lines carry `before`/`after`; for a rebuild `after` is `null` (hook-built). The hooks of one plugin nest in registration order, so ctx-log always sees a rebuild and never a hold.
+
+**Known limits.** A CLOSED written in the first turn after a restart is not reset (nobody saw it open). Staleness counts from the module's load. Precompute is skipped during an open order and was never observed live. Running team sessions whose `now.md` has no `state:` line (written before this change, e.g. meet-year-app today) are passed through until their agents reload at the operator's restart. Symlinked ledgers and `now.md` are followed. A hold trusts the window Claude Code reports. An earlier safety-net summary row can come back in a later tail (the old note itself is dropped). Only orphan tool results at the start of the tail are dropped. A rejected rebuild is dropped, not retried, when Claude Code's size figure misses its 150 ms window that turn. A synchronous throw from `$.session.compact()` is logged and leaves nothing pending, but the mod test kit cannot raise one, so that path is untested.
+
 ## Status Line
 
 Oh My Team installs a custom status line at the bottom of Claude Code:

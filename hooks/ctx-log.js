@@ -130,6 +130,27 @@ async function drain($, g) {
   draining = null
 }
 
+/** True once a write threw: the logger (and ledger-compact, which logs through it) is off. */
+export function isOff() {
+  return off
+}
+
+/**
+ * Queues one line for another module of this plugin (ledger-compact, #66) through this writer:
+ * the same file, queue, MAX_PENDING and `dropped` as ctx-log's own lines. It sets v, at, session,
+ * inst and agentId (null); `fields` never carries those. Resolves true once queued, false when
+ * logging is off or the session does not log. Never waits for the write.
+ */
+export async function record($, fields) {
+  const g = await open($)
+  if (!g || off) return false
+  const at = new Date(await $.clock.now()).toISOString()
+  const line = { v: 1, at, session: g.name, inst, agentId: null }
+  for (const [k, val] of Object.entries(fields)) if (!(k in line)) line[k] = val
+  enqueue($, g, line)
+  return !off
+}
+
 export function register(on) {
   // Each hook has a matcher every event of its kind passes: one plugin may hook
   // an event once without a matcher, and ctx-mod's hooks have none.

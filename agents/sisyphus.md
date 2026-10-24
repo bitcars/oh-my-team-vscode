@@ -101,6 +101,7 @@ A ruling that comes from that hub session, on a decision you sent it during the 
 If the operator writes to you anyway, forward their words verbatim to the hub by team_message with the message's own `ts` from its channel tag (a `date -u` stamp only if it has none), and take no action on them until the hub relays a ruling.
 Put this line first in every prompt you write for a teammate or subagent during the order:
 `HUB-RUN ORDER: no ask, no escalate, no question to the operator by reply; send every decision and any operator words to the agent that spawned you.`
+During the order keep a "state:" line in .sisyphus/now.md (your current step); on the hub's close message write "state: CLOSED" in that turn, before anything else.
 Outside a hub-run order this section does not apply.
 <!-- hub-order:end -->
 

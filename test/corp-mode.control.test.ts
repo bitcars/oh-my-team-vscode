@@ -43,7 +43,7 @@ const ROWS_FILE = "test/fixtures/corp-mode-rows.json";
 const ADDITIONS_FILE = "test/fixtures/corp-mode-doc-additions.json";
 const REWRITES_FILE = "test/fixtures/corp-mode-doc-rewrites.json";
 /** Every test in the suite, unmutated: 35 fixed (5 of them #32's attribution tests, 5 #37's reading-map tests) + one per row, rewrite and addition. */
-const EXPECTED_TOTAL = 205;
+const EXPECTED_TOTAL = 232;
 /** The suite's describe blocks; bun matches -t against "<describe> <title>". */
 const DESCRIBES = ["CM hub.md Dev flow", "CM fixtures", "CM spec doc", "CM plan-audit skill", "CM agent attribution", "CM reading map"];
 
@@ -60,7 +60,7 @@ const REWRITES = JSON.parse(readFileSync(path.join(REPO, REWRITES_FILE), "utf-8"
 const CM0 = "CM0 agents/hub.md has one Dev flow section that points at the spec, and the spec exists";
 const CM1 = "CM1 agents/hub.md above the Dev flow is byte-identical to aa1c623";
 const DISTINCT = "CM rows distinct: every rule is on its own line";
-const PIN = "CM fixtures pinned: the 28 row ids, 69 additions and 73 rewrites, ids unique, every row with an inversion";
+const PIN = "CM fixtures pinned: the 29 row ids, 95 additions and 73 rewrites, ids unique, every row with an inversion";
 const CM2HEAD = "CM2-head the lab doc has its version line, §0a and both source shas";
 const cm2 = (part: string) => `CM2-${part} §0a carries the ${part} rules`;
 const CM2PIN = "CM2-pin §0a is byte-identical to its pinned sha256";
@@ -484,7 +484,7 @@ const MUTANTS: Mutant[] = [
   {
     name: "g2-edge-changelog: the placeholder sits on the last line before the changelog",
     // #37: re-anchored on the newest changelog heading, which now opens the changelog.
-    edits: [insertBefore(DOC, "## Changes v2.4-lab.1 → v2.4-lab.2", "- Hub: new order WO-NNN = example.")],
+    edits: [insertBefore(DOC, "## Changes v2.4-lab.2 → v2.4-lab.3", "- Hub: new order WO-NNN = example.")],
     mustFail: [G2],
     mustPass: [G1],
   },
@@ -875,6 +875,11 @@ describe("corp-mode removal control", () => {
     const all = [...baseline.passed, ...baseline.failed, ...baseline.skipped];
     expect({ repeated: all.filter((t, i) => all.indexOf(t) !== i) }).toEqual({ repeated: [] });
     expect(baseline.passed.length).toBe(EXPECTED_TOTAL);
+  });
+
+  test("baseline count: passed + failed equals EXPECTED_TOTAL (CM5 carried until #54)", () => {
+    expect(baseline).not.toBeNull();
+    expect(baseline!.passed.length + baseline!.failed.length).toBe(EXPECTED_TOTAL);
   });
 
   test("every title named by a mutant exists in the suite (else HARNESS BROKEN)", () => {
