@@ -23,12 +23,17 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { TOOLS, callTool } from "./bridge-tools";
+import { makeBridgeFetch } from "./bridge-http";
+import { NonceBook, routerLoopback } from "./origin";
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT);
 const ROUTER_URL = process.env.ROUTER_URL || "http://localhost:8800";
 const SESSION_NAME = process.env.SESSION_NAME || "unnamed";
+// Talk to the router on 127.0.0.1, never "localhost": localhost can resolve
+// to ::1, where another process may hold the same port number (fork #56).
+const ROUTER = routerLoopback(ROUTER_URL);
 
 if (!BRIDGE_PORT || isNaN(BRIDGE_PORT)) {
   process.stderr.write(
@@ -70,58 +75,6 @@ process.on("uncaughtException", (err) => {
 
 log(`start session=${SESSION_NAME} port=${BRIDGE_PORT}`);
 
-// ── Attachment formatting ──────────────────────────────────────────────────
-
-interface ChannelAttachment {
-  path: string;
-  name: string;
-  mimeType: string;
-  size: number;
-  kind: string;
-}
-
-/**
- * Compose a channel message that makes attachments visible to the session.
- *
- * The user's original caption/text comes first. Below it we include a
- * structured block listing each file with its local path and metadata so
- * Claude can use the Read tool to view any that are relevant.
- *
- * The XML-ish tags are easy for the model to parse and unlikely to collide
- * with normal prose. We intentionally avoid putting raw paths on a bare
- * line so nothing looks like a command.
- */
-function formatContentWithAttachments(
-  text: string,
-  attachments: ChannelAttachment[]
-): string {
-  const lines: string[] = [];
-  if (text) {
-    lines.push(text);
-    lines.push("");
-  }
-  lines.push(`<attachments count="${attachments.length}">`);
-  for (const a of attachments) {
-    lines.push(
-      `  <file kind="${a.kind}" name="${escapeAttr(a.name)}" mime="${escapeAttr(a.mimeType)}" size="${a.size}" path="${escapeAttr(a.path)}" />`
-    );
-  }
-  lines.push(`</attachments>`);
-  lines.push("");
-  lines.push(
-    `(The user shared ${attachments.length === 1 ? "a file" : `${attachments.length} files`} — use the Read tool on any of the paths above to view the contents.)`
-  );
-  return lines.join("\n");
-}
-
-function escapeAttr(value: string): string {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
 // ── MCP Server ─────────────────────────────────────────────────────────────
 
 const mcp = new Server(
@@ -154,11 +107,15 @@ const mcp = new Server(
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 
+// One book for the whole bridge: callTool issues into it, /verify-origin takes from it.
+const nonces = new NonceBook();
+
 mcp.setRequestHandler(CallToolRequestSchema, async (req) =>
   callTool(req.params.name, req.params.arguments, {
-    routerUrl: ROUTER_URL,
+    routerUrl: ROUTER,
     sessionName: SESSION_NAME,
     log,
+    nonces,
   })
 );
 
@@ -176,7 +133,7 @@ const PermissionRequestSchema = z.object({
 
 mcp.setNotificationHandler(PermissionRequestSchema, async ({ params }) => {
   try {
-    await fetch(`${ROUTER_URL}/permission-request`, {
+    await fetch(`${ROUTER}/permission-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -198,6 +155,11 @@ mcp.setNotificationHandler(PermissionRequestSchema, async ({ params }) => {
 // ── Connect to Claude Code ─────────────────────────────────────────────────
 
 await mcp.connect(new StdioServerTransport());
+// Exit when Claude Code goes away (it closes our stdin), so an orphaned
+// bridge never keeps answering /health on its old port. The SDK transport
+// listens only for 'data' and 'error', so watch the stream itself.
+process.stdin.on("end", () => process.exit(0));
+process.stdin.on("close", () => process.exit(0));
 process.stderr.write(
   `omt-bridge: session="${SESSION_NAME}" port=${BRIDGE_PORT} router=${ROUTER_URL}\n`
 );
@@ -207,114 +169,13 @@ process.stderr.write(
 Bun.serve({
   port: BRIDGE_PORT,
   hostname: "127.0.0.1",
-
-  async fetch(req) {
-    const url = new URL(req.url);
-
-    // Health check
-    if (req.method === "GET" && url.pathname === "/health") {
-      return Response.json({ status: "ok", session: SESSION_NAME });
-    }
-
-    // Inbound message from router
-    if (req.method === "POST" && url.pathname === "/message") {
-      try {
-        const body = await req.json();
-        const { content, sender, senderId, messageId, timestamp, attachments } = body as {
-          content: string;
-          sender: string;
-          senderId: string;
-          messageId?: string;
-          timestamp?: string;
-          attachments?: Array<{
-            path: string;
-            name: string;
-            mimeType: string;
-            size: number;
-            kind: string;
-          }>;
-        };
-
-        const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
-        const text = typeof content === "string" ? content : "";
-
-        log(`/message text=${text.length}b attachments=${hasAttachments ? attachments!.length : 0}`);
-
-        // Require at least one of: text content or at least one attachment.
-        // (Users can send photo-only messages with no caption.)
-        if (!text && !hasAttachments) {
-          return Response.json(
-            { error: "content or attachments required" },
-            { status: 400 }
-          );
-        }
-
-        // Compose the channel content: original text first, then a structured
-        // attachments block so Claude can Read the files directly.
-        const finalContent = hasAttachments
-          ? formatContentWithAttachments(text, attachments!)
-          : text;
-
-        try {
-          // Note: we intentionally don't add attachment metadata to `meta` here —
-          // Claude Code's channel notification schema appears to reject unknown
-          // fields and close the MCP connection if they're present. The content
-          // string already carries the <attachments> block so the model sees them.
-          await mcp.notification({
-            method: "notifications/claude/channel",
-            params: {
-              content: finalContent,
-              meta: {
-                session: SESSION_NAME,
-                sender: sender || "unknown",
-                sender_id: senderId || "",
-                message_id: messageId || "",
-                ts: timestamp || new Date().toISOString(),
-              },
-            },
-          });
-          log(`notification delivered`);
-        } catch (notifyErr) {
-          const m = notifyErr instanceof Error ? notifyErr.message : String(notifyErr);
-          log(`notification FAILED: ${m}`);
-          throw notifyErr;
-        }
-
-        return Response.json({ status: "delivered" });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        log(`/message handler error: ${message}`);
-        return Response.json({ error: message }, { status: 500 });
-      }
-    }
-
-    // Permission response from router (user replied yes/no)
-    if (req.method === "POST" && url.pathname === "/permission-response") {
-      try {
-        const body = await req.json();
-        const { requestId, allow } = body as {
-          requestId: string;
-          allow: boolean;
-        };
-
-        await mcp.notification({
-          method: "notifications/claude/channel/permission",
-          params: {
-            request_id: requestId,
-            behavior: allow ? "allow" : "deny",
-          },
-        });
-
-        return Response.json({ status: "applied" });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        process.stderr.write(
-          `omt-bridge: permission response failed: ${message}\n`
-        );
-        return Response.json({ error: message }, { status: 500 });
-      }
-    }
-
-    return Response.json({ error: "not found" }, { status: 404 });
-  },
+  fetch: makeBridgeFetch({
+    sessionName: SESSION_NAME,
+    routerUrl: ROUTER,
+    nonces,
+    notify: (params) => mcp.notification({ method: "notifications/claude/channel", params }),
+    notifyPermission: (params) =>
+      mcp.notification({ method: "notifications/claude/channel/permission", params }),
+    log,
+  }),
 });

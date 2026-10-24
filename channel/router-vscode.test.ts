@@ -60,6 +60,7 @@ function makeBridge(label: "A" | "B") {
     port: 0,
     hostname: "127.0.0.1",
     async fetch(req) {
+      if (req.method === "GET") return Response.json({ status: "ok" });
       const url = new URL(req.url);
       bridgeHits.push({ bridge: label, path: url.pathname, body: (await req.json()) as Json });
       if (label === "B" && holdB) await holdB;
@@ -821,8 +822,9 @@ const sentTo = (threadId: string) => fake.sent.filter((m) => m.threadId === thre
 
 /** Register a fresh session and open an ask on it with [Alpha, Beta, Gamma]. */
 async function freshAsk(name: string, question = "Pick?", bridgePort = BRIDGE_PORT) {
-  await register(name, bridgePort);
+  await register(name, BRIDGE_PORT);
   const token = await ask(name, question, ABC);
+  if (bridgePort !== BRIDGE_PORT) await register(name, bridgePort);
   return { token, threadId: `thread-${name}` };
 }
 
@@ -1209,7 +1211,7 @@ describe("D3 POST /team-message", () => {
     expect(await res.json()).toEqual({ status: "delivered" });
     const hits = bridgeHits.slice(bMark).filter((h) => String(h.body.content ?? "").includes("hello team"));
     expect(hits.map((h) => [h.bridge, h.body.sender])).toEqual([["B", "team:team-from"]]);
-    expect(hits[0].body.content as string).toStartWith('<team-message from="team-from">\nhello team\n</team-message>\n');
+    expect(hits[0].body.content as string).toStartWith('<team-message from="team-from" verified="no">\nhello team\n</team-message>\n');
     const e = await waitForEvent(eMark, (x) => x.type === "session.reply" && x.name === "team-to");
     expect(e).toMatchObject({ name: "team-to", kind: "team", text: "[team ← team-from] hello team", seq: 1 });
     const replies = (await eventsAfter(eMark)).filter((x) => x.type === "session.reply");
