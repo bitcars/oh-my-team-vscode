@@ -1884,6 +1884,404 @@ const MUTANTS: Mutant[] = [
     "mustPass": [
       "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched"
     ]
+  },
+  {
+    "name": "X106 wait branch dead",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "    if (waiting) {\n",
+        "    if (false) {\n"
+      ]
+    ],
+    "mustFail": [
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource",
+      "C31r the recorded blocks: LWO-019 (an open ask) is held; LWO-018 reopened (none, nothing) is rebuilt (idle)",
+      "C32 the guard edge while waiting: 899,999 is held (idle-wait, 89.9%), 900,000 is rebuilt (guard)",
+      "C36 D1: 018 waits and 019 does not → held for 018 with the full line; both wait → for 019 (the newest); neither → rebuild/idle",
+      "C33c closed wins over a wait: with 018 waiting an idle auto is held for 018; then 019 → CLOSED between turns → the next idle auto is rebuild/closed (Now LWO-018), no second hold"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C33t a team now.md with an \"Open asks: a1\" line: an idle auto is rebuilt (idle), no hold line"
+    ]
+  },
+  {
+    "name": "X107 no-wait ledgers wait",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "    return { key, value: v }\n  }\n  return null\n}",
+        "    return { key, value: v }\n  }\n  return { key: 'none', value: '' }\n}"
+      ]
+    ],
+    "mustFail": [
+      "C30n waitOf finds none: none and nothing with their notes, a waiting-for with no word, an empty value, no key, the recorded LWO-018 block",
+      "C30r waitOf key rules: first line wins, an empty first value is none, last instance on a line, a quoted key is ignored, a key after words is not a key",
+      "C31p each key alone, with one-value twins: pending taps \"push tap\" held, \"none (operator …)\" rebuilt; waiting for \"operator pick\" held, \"audit r1\" rebuilt",
+      "C31r the recorded blocks: LWO-019 (an open ask) is held; LWO-018 reopened (none, nothing) is rebuilt (idle)",
+      "C36 D1: 018 waits and 019 does not → held for 018 with the full line; both wait → for 019 (the newest); neither → rebuild/idle"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X108 team gate dropped",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "const waiting = g.hub ? all.open",
+        "const waiting = true ? all.open"
+      ]
+    ],
+    "mustFail": [
+      "C33t a team now.md with an \"Open asks: a1\" line: an idle auto is rebuilt (idle), no hold line"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X109 idle-wait guard >= -> >",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "      if (size.tokens >= GUARD * size.window) return doRebuild('guard') // W2\n",
+        "      if (size.tokens > GUARD * size.window) return doRebuild('guard') // W2\n"
+      ]
+    ],
+    "mustFail": [
+      "C32 the guard edge while waiting: 899,999 is held (idle-wait, 89.9%), 900,000 is rebuilt (guard)"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X110 W1a engine figure not needed",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "      if (size.engine === null) return doRebuild('no-engine-size') // W1a: the engine's figure\n",
+        ""
+      ]
+    ],
+    "mustFail": [
+      "C32u size unknown while waiting: usage never answers, a window of 0 with the engine known, the engine silent after a primed turn → rebuilt (no-engine-size); each twin with the size known is held"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X111 none never matches",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "const WAIT_NONE = /^(?:none|nothing)\\b/i\n",
+        "const WAIT_NONE = /^$x/\n"
+      ]
+    ],
+    "mustFail": [
+      "C30n waitOf finds none: none and nothing with their notes, a waiting-for with no word, an empty value, no key, the recorded LWO-018 block",
+      "C30r waitOf key rules: first line wins, an empty first value is none, last instance on a line, a quoted key is ignored, a key after words is not a key"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block"
+    ]
+  },
+  {
+    "name": "X112 waiting-for needs no word",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "    if (key === 'waiting-for' && !WAIT_WORDS.test(v)) continue\n",
+        ""
+      ]
+    ],
+    "mustFail": [
+      "C30n waitOf finds none: none and nothing with their notes, a waiting-for with no word, an empty value, no key, the recorded LWO-018 block",
+      "C30a waitOf accepted shapes: (none) and n/a and a no-operator note read as a wait; a key after \";\" reads none",
+      "C31p each key alone, with one-value twins: pending taps \"push tap\" held, \"none (operator …)\" rebuilt; waiting for \"operator pick\" held, \"audit r1\" rebuilt"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block"
+    ]
+  },
+  {
+    "name": "X113 escalation not a wait word",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "|taps?|escalations?)\\b/i\n",
+        "|taps?)\\b/i\n"
+      ]
+    ],
+    "mustFail": [
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X114 tap not a wait word",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "operators?|taps?|escalations?",
+        "operators?|escalations?"
+      ]
+    ],
+    "mustFail": [
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X115 open asks not read",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "[['open-asks', 'open\\\\s+asks'], ",
+        "["
+      ]
+    ],
+    "mustFail": [
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block",
+      "C30r waitOf key rules: first line wins, an empty first value is none, last instance on a line, a quoted key is ignored, a key after words is not a key",
+      "C30a waitOf accepted shapes: (none) and n/a and a no-operator note read as a wait; a key after \";\" reads none",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C30n waitOf finds none: none and nothing with their notes, a waiting-for with no word, an empty value, no key, the recorded LWO-018 block"
+    ]
+  },
+  {
+    "name": "X116 pending taps not read",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "['pending-taps', 'pending\\\\s+taps'], ",
+        ""
+      ]
+    ],
+    "mustFail": [
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block",
+      "C31p each key alone, with one-value twins: pending taps \"push tap\" held, \"none (operator …)\" rebuilt; waiting for \"operator pick\" held, \"audit r1\" rebuilt"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C30n waitOf finds none: none and nothing with their notes, a waiting-for with no word, an empty value, no key, the recorded LWO-018 block"
+    ]
+  },
+  {
+    "name": "X117 an empty first value falls through",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "    if (hits.length === 0) continue\n",
+        "    if (hits.length === 0 || /^\\W*$/.test(text.slice(hits[hits.length - 1].index + hits[hits.length - 1][0].length))) continue\n"
+      ]
+    ],
+    "mustFail": [
+      "C30r waitOf key rules: first line wins, an empty first value is none, last instance on a line, a quoted key is ignored, a key after words is not a key"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block"
+    ]
+  },
+  {
+    "name": "X118 quotes not stripped in fieldOf",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "    const text = stripQuotes(row)\n",
+        "    const text = row\n"
+      ]
+    ],
+    "mustFail": [
+      "C30r waitOf key rules: first line wins, an empty first value is none, last instance on a line, a quoted key is ignored, a key after words is not a key"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block"
+    ]
+  },
+  {
+    "name": "X119 only the newest open ledger",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "all.open.filter((r) => !isStale(r.entry))",
+        "all.open.slice(0, 1).filter((r) => !isStale(r.entry))"
+      ]
+    ],
+    "mustFail": [
+      "C33c closed wins over a wait: with 018 waiting an idle auto is held for 018; then 019 → CLOSED between turns → the next idle auto is rebuild/closed (Now LWO-018), no second hold",
+      "C34o a stale waiting ledger that is not the newest: 018 waits untouched while 019 changes every turn; 29 more turn.completes → held for 018, 30 → rebuild/idle",
+      "C36 D1: 018 waits and 019 does not → held for 018 with the full line; both wait → for 019 (the newest); neither → rebuild/idle"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X120 the wait only under the shipped rule",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "    if (waiting) {\n",
+        "    if (waiting && IDLE_RULE === 'rebuild') {\n"
+      ]
+    ],
+    "mustFail": [
+      "[hold] C38h in the hold run: a waiting idle at 359,000 → held for the operator wait; no wait → held as open (idle)",
+      "[above-soft] C38s in the above-soft run: a waiting idle at 300,000 → held for the operator wait; no wait at 299,999 → held as open (idle)"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X121 hold reason idle",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "reason: 'idle-wait', wait:",
+        "reason: 'idle', wait:"
+      ]
+    ],
+    "mustFail": [
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource",
+      "C35 held, then answered: an idle auto is held; the Now rewritten \"Open asks: none.\" and one turn; the next idle auto → rebuild/idle"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block"
+    ]
+  },
+  {
+    "name": "X122 wait fields dropped",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        ", wait: waiting.w.key, waitSource: waiting.r.path })",
+        " })"
+      ]
+    ],
+    "mustFail": [
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource",
+      "C36 D1: 018 waits and 019 does not → held for 018 with the full line; both wait → for 019 (the newest); neither → rebuild/idle"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block"
+    ]
+  },
+  {
+    "name": "X123 the last line wins",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "  const keyAt = new RegExp(",
+        "  let found = null\n  const keyAt = new RegExp("
+      ],
+      [
+        "    return value.endsWith('.') ? value.slice(0, -1) : value\n  }\n  return null\n}",
+        "    found = value.endsWith('.') ? value.slice(0, -1) : value\n  }\n  return found\n}"
+      ]
+    ],
+    "mustFail": [
+      "C30r waitOf key rules: first line wins, an empty first value is none, last instance on a line, a quoted key is ignored, a key after words is not a key"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block"
+    ]
+  },
+  {
+    "name": "X124 the wait before the closing ledger",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "    const closing = all.read.find((r) => r.state && r.state.closed && r.entry.seenOpen && !closedDone.has(r.path))",
+        "    const closing = !running && g.hub && all.open.some((r) => waitOf(r.nowText) !== null) ? undefined : all.read.find((r) => r.state && r.state.closed && r.entry.seenOpen && !closedDone.has(r.path))"
+      ]
+    ],
+    "mustFail": [
+      "C33c closed wins over a wait: with 018 waiting an idle auto is held for 018; then 019 → CLOSED between turns → the next idle auto is rebuild/closed (Now LWO-018), no second hold"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X125 a stale waiting ledger still holds",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "all.open.filter((r) => !isStale(r.entry))",
+        "all.open.filter(() => true)"
+      ]
+    ],
+    "mustFail": [
+      "C34o a stale waiting ledger that is not the newest: 018 waits untouched while 019 changes every turn; 29 more turn.completes → held for 018, 30 → rebuild/idle"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X126 W1b window not needed",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        "      if (!size.known) return doRebuild('no-engine-size') // W1b: the window\n",
+        ""
+      ]
+    ],
+    "mustFail": [
+      "C32u size unknown while waiting: usage never answers, a window of 0 with the engine known, the engine silent after a primed turn → rebuilt (no-engine-size); each twin with the size known is held"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
+  },
+  {
+    "name": "X127 the oldest waiting ledger wins",
+    "file": "hooks/ledger-compact.js",
+    "patches": [
+      [
+        ".map((r) => ({ r, w: waitOf(r.nowText) })).find(",
+        ".map((r) => ({ r, w: waitOf(r.nowText) })).reverse().find("
+      ]
+    ],
+    "mustFail": [
+      "C36 D1: 018 waits and 019 does not → held for 018 with the full line; both wait → for 019 (the newest); neither → rebuild/idle"
+    ],
+    "mustPass": [
+      "C9b B2, B2+1, B2+2 at K = 12 → 14, 15, 16 rows, 0 unmatched",
+      "C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource"
+    ]
   }
 ];
 

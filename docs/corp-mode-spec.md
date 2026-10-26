@@ -1,4 +1,4 @@
-# Corp mode spec — v2.4-lab.3 (AI.Lab copy)
+# Corp mode spec — v2.4-lab.4 (AI.Lab copy)
 
 AI.Lab copy for #25 (WO-027) of v2.4 (sha1 214952dc). Self-contained: §0a carries the
 flow-spec rules it relies on (flow spec v1.2.2, sha1 1cac472e), so the lab hub needs no
@@ -924,6 +924,11 @@ Pending taps: <what>, or "none". Next: <action>. Evidence: <paths>.
   ledger is the highest-numbered LWO file whose State does not start with CLOSED; a team's
   now.md carries a `state:` line in the same form, CLOSED at the end (§4.6). The first line
   that holds a State key wins; on that line the last key wins.
+- **Operator wait for the hook:** the hub's Now block waits on the operator when its `Open asks:`
+  or `Pending taps:` value does not start with "none" or "nothing", or its `Waiting for:` value
+  names the operator, a tap or an escalation. Each key is read like State: the first line that
+  holds it wins, on that line the last key wins, quoted text is ignored, the value ends at the
+  first ". ", and an empty value is none (§4.6).
 - **Numbering:** an LWO number is assigned when `<vault>/lab/tasks/LWO-NNN-<slug>.md` is
   created: the next after the highest existing file, from LWO-001. Ledger files are the only
   source. Never a Corp WO number. `mkdir -p "<vault>/lab/tasks"` for the first one. Corp's
@@ -959,6 +964,12 @@ Pending taps: <what>, or "none". Next: <action>. Evidence: <paths>.
   keep a tool group whole); an automatic compaction inside a turn below 90% is held only when
   Claude Code's own size figure is known, and rebuilt otherwise.
   The hooks of one plugin nest in registration order, so ctx-log logs every rebuild with after: null.
+- **One exception to the above:** an idle compaction of the hub below 90%, with Claude Code's own
+  size known, is held, not rebuilt, while an open ledger's Now block waits on the operator (§4.3)
+  and changed within the last 30 main turns; it is logged hold/idle-wait. The conversation stays
+  whole, but its prompt cache lapses about 60 minutes after the last turn, so the first turn after
+  that (normally the answer) re-reads all of it once; a rebuild would have made that turn cheap.
+  At 90% or with the size unknown it is rebuilt (a stale newest ledger is reconciled first).
 - **Passes through:** a manual /compact, sub-agents, teammates, a closed or stale order (a stale
   one gets a RECONCILE line first) and a session without a Now block. The file
   `~/.omt-scratch/lab-ctx/ledger-compact.off` turns it off. It logs to the context-size log (§4.4).
@@ -1292,6 +1303,13 @@ shared data contract, run as one order with two sides. This spec doesn't design 
 waits until the single-item flow has passed §7.
 
 ---
+
+## Changes v2.4-lab.3 → v2.4-lab.4
+- 2026-10-26, #69 item B: §4.3 the operator-wait reading of the hub's Now block; §4.6
+  an idle compaction of the hub below 90% is held while that block waits on the operator.
+- Pins moved: the header (lab.3 → lab.4) in DOC_TITLE and rewrite r1; additions a-43-wait-1..5
+  and a-46-wait-1..6; ADDITION_COUNT, EXPECTED_TOTAL and the fixtures-pinned title;
+  g2-edge-changelog re-anchored on this heading.
 
 ## Changes v2.4-lab.2 → v2.4-lab.3
 - 2026-10-24, #66 (LWO-019): deterministic context management, part 3 (the hook). §1.13: the

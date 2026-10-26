@@ -473,5 +473,60 @@
     "id": "a-toc-46",
     "where": "contents",
     "present": "^  - §4\\.6 Context hook \\(hooks\\/ledger-compact\\.js\\)$"
+  },
+  {
+    "id": "a-43-wait-1",
+    "where": "§4.3",
+    "present": "^- \\*\\*Operator wait for the hook:\\*\\* the hub's Now block waits on the operator when its `Open asks:`$"
+  },
+  {
+    "id": "a-43-wait-2",
+    "where": "§4.3",
+    "present": "^  or `Pending taps:` value does not start with \"none\" or \"nothing\", or its `Waiting for:` value$"
+  },
+  {
+    "id": "a-43-wait-3",
+    "where": "§4.3",
+    "present": "^  names the operator, a tap or an escalation\\. Each key is read like State: the first line that$"
+  },
+  {
+    "id": "a-43-wait-4",
+    "where": "§4.3",
+    "present": "^  holds it wins, on that line the last key wins, quoted text is ignored, the value ends at the$"
+  },
+  {
+    "id": "a-43-wait-5",
+    "where": "§4.3",
+    "present": "^  first \"\\. \", and an empty value is none \\(§4\\.6\\)\\.$"
+  },
+  {
+    "id": "a-46-wait-1",
+    "where": "§4.6",
+    "present": "^- \\*\\*One exception to the above:\\*\\* an idle compaction of the hub below 90%, with Claude Code's own$"
+  },
+  {
+    "id": "a-46-wait-2",
+    "where": "§4.6",
+    "present": "^  size known, is held, not rebuilt, while an open ledger's Now block waits on the operator \\(§4\\.3\\)$"
+  },
+  {
+    "id": "a-46-wait-3",
+    "where": "§4.6",
+    "present": "^  and changed within the last 30 main turns; it is logged hold\\/idle-wait\\. The conversation stays$"
+  },
+  {
+    "id": "a-46-wait-4",
+    "where": "§4.6",
+    "present": "^  whole, but its prompt cache lapses about 60 minutes after the last turn, so the first turn after$"
+  },
+  {
+    "id": "a-46-wait-5",
+    "where": "§4.6",
+    "present": "^  that \\(normally the answer\\) re-reads all of it once; a rebuild would have made that turn cheap\\.$"
+  },
+  {
+    "id": "a-46-wait-6",
+    "where": "§4.6",
+    "present": "^  At 90% or with the size unknown it is rebuilt \\(a stale newest ledger is reconciled first\\)\\.$"
   }
 ]

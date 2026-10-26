@@ -4,6 +4,8 @@
 // block, lab/standing.md and the spec's contents and reading map, then the last K rows) or, inside
 // a turn below the hard guard and with Claude Code's own size known, held. At CLOSED, at the hard
 // guard and at a step boundary above the soft mark, turn.complete starts the rebuild itself.
+// An idle compaction of the hub below the hard guard is held, not rebuilt, while a fresh open
+// ledger's Now block waits on the operator (#69 B).
 //
 // Manual /compact, sub-agents and teammates pass through. A session with no Now block, a read
 // error or an unknown size passes through. Every decision is one line in the context-size log,
@@ -192,6 +194,40 @@ export function stateOf(nowText, ledger) {
     if (v.endsWith('.')) v = v.slice(0, -1)
     if (v === '') return null
     return { value: v, closed: /^closed(?=$|[\s(.,;:—-])/i.test(v) }
+  }
+  return null
+}
+
+// ── the operator wait (§4.3, #69 B) ─────────────────────────────────────────
+
+const WAIT_KEYS = [['open-asks', 'open\\s+asks'], ['pending-taps', 'pending\\s+taps'], ['waiting-for', 'waiting\\s+for']]
+const WAIT_NONE = /^(?:none|nothing)\b/i
+const WAIT_WORDS = /\b(?:operators?|taps?|escalations?)\b/i
+
+/** One key's value in a ledger Now block, read like State (R21): the first line holding the key, its last instance; null if no line holds it. */
+// #69 B: the same key rule as stateOf, written in other text so every control mutant's find string stays unique; change both together. (?:^|\.\s) and not \.\s+: no backtracking on a long run of spaces.
+function fieldOf(nowText, name) {
+  const keyAt = new RegExp(`(?:^|\\.\\s)\\s*(?:-\\s+)?(?:\\*\\*)?${name}(?:\\*\\*)?:(?:\\*\\*)?`, 'gi')
+  for (const row of nowText.split('\n')) {
+    const text = stripQuotes(row)
+    const hits = [...text.matchAll(keyAt)]
+    if (hits.length === 0) continue
+    const last = hits[hits.length - 1]
+    const tail = text.slice(last.index + last[0].length)
+    const cut = tail.search(/\.\s/)
+    const value = (cut >= 0 ? tail.slice(0, cut) : tail).replace(/\*/g, '').trim()
+    return value.endsWith('.') ? value.slice(0, -1) : value
+  }
+  return null
+}
+
+/** The operator wait a hub Now block shows (§4.3): { key, value }, or null. */
+export function waitOf(nowText) {
+  for (const [key, name] of WAIT_KEYS) {
+    const v = fieldOf(nowText, name)
+    if (v === null || v === '' || WAIT_NONE.test(v)) continue
+    if (key === 'waiting-for' && !WAIT_WORDS.test(v)) continue
+    return { key, value: v }
   }
   return null
 }
@@ -537,8 +573,9 @@ function holdLine($, e, size, source, extra = {}) {
   if (c === 1) log($, { kind: 'hold', trigger: e.trigger, reason: running ? 'below-guard' : 'idle', tokens: size.tokens, window: size.window, source: source.path, state: source.state.value, ...extra })
 }
 
-function holdSkip(size, source, g) {
+function holdSkip(size, source, g, wait = null) {
   const who = g.hub ? `LWO-${(/LWO-(\d{3,})-/.exec(source.path) || [])[1]}` : 'now.md'
+  if (wait) return { skip: `ledger-compact: held at ${pct(size.tokens, size.window)}% (${size.tokens}) < guard 90% while ${who} waits on the operator (${wait.key}); /compact still runs` }
   return { skip: `ledger-compact: held at ${pct(size.tokens, size.window)}% (${size.tokens}) < guard 90% while ${who} is open (State: ${source.state.value}); /compact still runs` }
 }
 
@@ -652,6 +689,16 @@ async function decide($, e, next) {
     return rebuild($, e, next, reason, all.open, files, g, size.tokens, readExtra(all))
   }
   if (!running) {
+    // #69 B: the hub waiting on the operator holds an idle compaction below the guard
+    const waiting = g.hub ? all.open.filter((r) => !isStale(r.entry)).map((r) => ({ r, w: waitOf(r.nowText) })).find((x) => x.w !== null) : undefined
+    if (waiting) {
+      // #69 B: the size check is two lines so the control can remove each half (X110, X126)
+      if (size.engine === null) return doRebuild('no-engine-size') // W1a: the engine's figure
+      if (!size.known) return doRebuild('no-engine-size') // W1b: the window
+      if (size.tokens >= GUARD * size.window) return doRebuild('guard') // W2
+      holdLine($, e, size, source, { ...readExtra(all), reason: 'idle-wait', wait: waiting.w.key, waitSource: waiting.r.path })
+      return holdSkip(size, waiting.r, g, waiting.w)
+    }
     if (IDLE_RULE === 'rebuild') return doRebuild('idle')
     if (size.engine === null || !size.known) return doRebuild('no-engine-size')
     if (size.tokens >= GUARD * size.window) return doRebuild('guard')

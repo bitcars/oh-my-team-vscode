@@ -12,7 +12,7 @@
 // turn.complete, then raises the own-call event itself ({ trigger: 'plugin' }, nameless origin)
 // while the bottom holds that call in flight.
 import { expect, mock, test } from 'claude-code/testing'
-import { afterNext, ledgerNow, ownerOf, stateOf, tailOf } from '../hooks/ledger-compact.js'
+import { afterNext, ledgerNow, ownerOf, stateOf, tailOf, waitOf } from '../hooks/ledger-compact.js'
 import { FIX } from './fixtures.js'
 
 const HOME = '/home/lab'
@@ -1374,4 +1374,340 @@ test('C6c2 B4 three open Now blocks of 20 KiB each: the joined Now sections are 
   const t: string = r.messages[0].text
   const nowPart = t.slice(t.indexOf('== Now:'), t.indexOf('== Standing rulings =='))
   expect([nowPart.split('[cut at 32768 bytes]').length - 1, nowPart.length < 32900]).toEqual([1, true])
+})
+
+// ── the operator wait (#69 B) ──────────────────────────────────────────────
+
+const nowOf = (t: string) => t.split('## Now\n')[1].split('## Log')[0]
+const W019 = (extra = ' Open asks: a1.') => ledger('IMPLEMENT', extra)
+const holdLines = (writes: { text: string }[]) => ours(writes).filter((l) => l.kind === 'hold')
+const pick = (l: any) => ({ reason: l.reason, source: l.source, state: l.state, others: l.others ?? null, wait: l.wait ?? null, waitSource: l.waitSource ?? null })
+const noHookError = (writes: { text: string }[]) => !ours(writes).some((l) => l.reason === 'hook-error')
+
+test('C30 waitOf finds a wait: open asks, pending taps, each waiting-for word, bullet, bold, case, mid-line, the recorded LWO-019 block', () => {
+  expect([
+    waitOf('Open asks: 848970f4'),
+    waitOf('Pending taps: push tap'),
+    waitOf('Waiting for: operator pick on ask a1'),
+    waitOf("Waiting for: the operator's tap"),
+    waitOf('Waiting for: the push tap'),
+    waitOf('Waiting for: escalation e1'),
+    waitOf('Waiting for: escalations e1 and e2'),
+    waitOf('Waiting for: the operators'),
+    waitOf('- Open asks: a1'),
+    waitOf('- **Open asks:** a1'),
+    waitOf('OPEN ASKS: a1'),
+    waitOf('State: X. Open asks: a1.'),
+    waitOf(nowOf(FIX.ledger019)),
+  ]).toEqual([
+    { key: 'open-asks', value: '848970f4' },
+    { key: 'pending-taps', value: 'push tap' },
+    { key: 'waiting-for', value: 'operator pick on ask a1' },
+    { key: 'waiting-for', value: "the operator's tap" },
+    { key: 'waiting-for', value: 'the push tap' },
+    { key: 'waiting-for', value: 'escalation e1' },
+    { key: 'waiting-for', value: 'escalations e1 and e2' },
+    { key: 'waiting-for', value: 'the operators' },
+    { key: 'open-asks', value: 'a1' },
+    { key: 'open-asks', value: 'a1' },
+    { key: 'open-asks', value: 'a1' },
+    { key: 'open-asks', value: 'a1' },
+    { key: 'open-asks', value: '848970f4' },
+  ])
+})
+
+test('C30n waitOf finds none: none and nothing with their notes, a waiting-for with no word, an empty value, no key, the recorded LWO-018 block', () => {
+  expect([
+    waitOf('Open asks: none'),
+    waitOf('Open asks: none (779f2d08 answered by the 12:31Z tap)'),
+    waitOf('Pending taps: none (operator restart is their choice)'),
+    waitOf('Waiting for: nothing (operator restart)'),
+    waitOf('Waiting for: audit r1 reports'),
+    waitOf('Waiting for: tapped out'),
+    waitOf('Open asks:'),
+    waitOf('Tier: M. State: X.'),
+    waitOf(nowOf(FIX.ledger018)),
+  ]).toEqual([null, null, null, null, null, null, null, null, null])
+})
+
+test('C30r waitOf key rules: first line wins, an empty first value is none, last instance on a line, a quoted key is ignored, a key after words is not a key', () => {
+  expect([
+    waitOf('Open asks: none.\nOpen asks: a1.'),
+    waitOf('Open asks: a1.\nOpen asks: none.'),
+    waitOf('Open asks: a2\nOpen asks: a1.'),
+    waitOf('Open asks:\nOpen asks: a1.'),
+    waitOf('Open asks: a1. Open asks: none.'),
+    waitOf('Open asks: none. Open asks: a1.'),
+    waitOf('Order: "do it. Open asks: a1". Tier: M.'),
+    waitOf('Order: do it. Open asks: a1. Tier: M.'),
+    waitOf('Order: Open asks: a1. Tier: M.'),
+    waitOf('Open asks: a1 "is it v2. or v3". Tier: M.'),
+  ]).toEqual([
+    null,
+    { key: 'open-asks', value: 'a1' },
+    { key: 'open-asks', value: 'a2' },
+    null,
+    null,
+    { key: 'open-asks', value: 'a1' },
+    null,
+    { key: 'open-asks', value: 'a1' },
+    null,
+    { key: 'open-asks', value: 'a1' },
+  ])
+})
+
+test('C30a waitOf accepted shapes: (none) and n/a and a no-operator note read as a wait; a key after ";" reads none', () => {
+  expect([
+    waitOf('Open asks: (none)'),
+    waitOf('Open asks: n/a'),
+    waitOf('Waiting for: audit r1, since 04:00Z; Open asks: a1.'),
+    waitOf('Waiting for: hub re-run (no operator input needed)'),
+  ]).toEqual([
+    { key: 'open-asks', value: '(none)' },
+    { key: 'open-asks', value: 'n/a' },
+    null,
+    { key: 'waiting-for', value: 'hub re-run (no operator input needed)' },
+  ])
+})
+
+test('C31 an idle auto at 359,000 with LWO-019 asking the operator is held: the notice, core not called, one hold/idle-wait line with wait and waitSource', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: ledger('IMPLEMENT', ' Open asks: 848970f4.') } })
+  const r = await compact($, 'auto')
+  await clock.settle()
+  expect([r.skip, box.coreIn.length, kr(writes), holdLines(writes).map(pick)]).toEqual([
+    'ledger-compact: held at 35.9% (359000) < guard 90% while LWO-019 waits on the operator (open-asks); /compact still runs',
+    0,
+    [['hold', 'idle-wait']],
+    [{ reason: 'idle-wait', source: P019, state: 'IMPLEMENT', others: null, wait: 'open-asks', waitSource: P019 }],
+  ])
+})
+
+test('C31r the recorded blocks: LWO-019 (an open ask) is held; LWO-018 reopened (none, nothing) is rebuilt (idle)', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: FIX.ledger019 } })
+  const a = await compact($, 'auto')
+  const coreA = box.coreIn.length
+  await turn($, box, clock, 100, 't1')
+  delete box.files[P019]
+  box.files[P018] = FIX.ledger018.replace('State: CLOSED.', 'State: REVIEW.')
+  const b = await compact($, 'auto')
+  await clock.settle()
+  expect([a.skip?.startsWith(HELD), coreA, isRebuild(b, 'idle'), kr(writes).filter(([k]) => k !== 'pass'), noHookError(writes)]).toEqual([true, 0, true, [['hold', 'idle-wait'], ['rebuild', 'idle']], true])
+})
+
+test('C31p each key alone, with one-value twins: pending taps "push tap" held, "none (operator …)" rebuilt; waiting for "operator pick" held, "audit r1" rebuilt', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: W019(' Pending taps: push tap.') } })
+  const out: unknown[] = []
+  const go = async (extra: string, id: string) => {
+    box.files[P019] = W019(extra)
+    const n = box.coreIn.length
+    const r = await compact($, 'auto')
+    out.push(r.skip?.startsWith(HELD) ? ['held', box.coreIn.length - n] : isRebuild(r, 'idle') ? 'rebuild/idle' : r)
+    await turn($, box, clock, 100, id)
+  }
+  await go(' Pending taps: push tap.', 't1')
+  await go(' Pending taps: none (operator restart is their choice).', 't2')
+  const goW = async (waiting: string, id: string) => {
+    box.files[P019] = ledger('IMPLEMENT').replace('Waiting for: x.', `Waiting for: ${waiting}.`)
+    const n = box.coreIn.length
+    const r = await compact($, 'auto')
+    out.push(r.skip?.startsWith(HELD) ? ['held', box.coreIn.length - n] : isRebuild(r, 'idle') ? 'rebuild/idle' : r)
+    await turn($, box, clock, 100, id)
+  }
+  await goW('operator pick on ask a1', 't3')
+  await goW('audit r1', 't4')
+  await clock.settle()
+  expect([out, noHookError(writes)]).toEqual([[['held', 0], 'rebuild/idle', ['held', 0], 'rebuild/idle'], true])
+})
+
+test('C32 the guard edge while waiting: 899,999 is held (idle-wait, 89.9%), 900,000 is rebuilt (guard)', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: W019() } })
+  box.usage = usageOf(899999).value
+  const a = await compact($, 'auto')
+  box.usage = usageOf(900000).value
+  const b = await compact($, 'auto')
+  await clock.settle()
+  expect([a.skip?.includes('89.9%'), box.coreIn.length > 0, isRebuild(b, 'guard'), kr(writes)]).toEqual([true, true, true, [['hold', 'idle-wait'], ['rebuild', 'guard']]])
+})
+
+test('C32u size unknown while waiting: usage never answers, a window of 0 with the engine known, the engine silent after a primed turn → rebuilt (no-engine-size); each twin with the size known is held', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: W019() } })
+  const got: unknown[] = []
+  const say = (r: any) => (r?.skip?.startsWith(HELD) ? 'held' : isRebuild(r, 'no-engine-size') ? 'no-engine-size' : isRebuild(r, 'guard') ? 'guard' : 'other')
+  // (b) fresh module, window 0, engine 359,000: the window is unknown
+  box.usage = usageOf(359000, 0).value
+  got.push(say(await compact($, 'auto')))
+  // twin: the window known
+  box.usage = usageOf(359000).value
+  got.push(say(await compact($, 'auto')))
+  await turn($, box, clock, 359000, 't1') // primes lastStepTokens 359,000 and the window
+  // (c) the engine gives no tokens: the engine's figure is unknown, the size is known from the step
+  box.usage = usageOf(null).value
+  got.push(say(await compact($, 'auto')))
+  await turn($, box, clock, 359000, 't2')
+  box.usage = usageOf(359000).value
+  got.push(say(await compact($, 'auto')))
+  await turn($, box, clock, 359000, 't3')
+  // (a) usage never answers
+  box.usageHook = NEVER
+  const p = compact($, 'auto')
+  await clock.advance(150)
+  got.push(say(await p))
+  box.usageHook = null
+  await clock.settle()
+  expect([got, ours(writes).filter((l) => l.kind === 'hold' || l.kind === 'rebuild').map((l) => [l.kind, l.reason])]).toEqual([
+    ['no-engine-size', 'held', 'no-engine-size', 'held', 'no-engine-size'],
+    [['rebuild', 'no-engine-size'], ['hold', 'idle-wait'], ['rebuild', 'no-engine-size'], ['hold', 'idle-wait'], ['rebuild', 'no-engine-size']],
+  ])
+})
+
+test('C33 pass-throughs with a wait open: manual → next(e) and pass/manual; a sub-agent → next(e), no line; a teammate → next(e), no line; precompute → our skip', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: W019() } })
+  box.usage = usageOf(500000).value
+  const m1 = await compact($, 'manual', rows('U A'))
+  box.usage = usageOf(950000).value
+  const m2 = await compact($, 'manual', rows('U A'))
+  const sa = await compact($, 'auto', rows('U A'), { agentId: 'a1' })
+  const pc = await compact($, 'precompute')
+  box.env.CLAUDE_CODE_TEAMMATE = '1'
+  const tm = await compact($, 'auto', rows('U A'))
+  await clock.settle()
+  expect([m1.messages[0].text, m2.messages[0].text, sa.messages[0].text, pc.skip, tm.messages[0].text, box.coreIn.map((c) => c.trigger), kr(writes)]).toEqual([
+    CORE,
+    CORE,
+    CORE,
+    'ledger-compact: precompute off during an open order',
+    CORE,
+    ['manual', 'manual', 'auto', 'auto'],
+    [['pass', 'manual'], ['pass', 'manual']],
+  ])
+})
+
+test('C33c closed wins over a wait: with 018 waiting an idle auto is held for 018; then 019 → CLOSED between turns → the next idle auto is rebuild/closed (Now LWO-018), no second hold', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: ledger('IMPLEMENT'), [P018]: W019() } })
+  await turn($, box, clock, 100, 't1')
+  await turn($, box, clock, 100, 't2')
+  const a = await compact($, 'auto')
+  box.pluginReject = new Error('rejected below')
+  box.files[P019] = ledger('CLOSED')
+  await turn($, box, clock, 100, 't3')
+  box.pluginReject = null
+  const r = await compact($, 'auto')
+  await clock.settle()
+  expect([a.skip?.includes('while LWO-018 waits on the operator'), isRebuild(r, 'closed'), r.messages?.[0].text.includes('== Now: LWO-018 (hub ledger) =='), holdLines(writes).map((l) => [l.reason, l.waitSource])]).toEqual([true, true, true, [['idle-wait', P018]]])
+})
+
+test('C33t a team now.md with an "Open asks: a1" line: an idle auto is rebuilt (idle), no hold line', async ($, on) => {
+  const { clock, writes } = setup(on, { env: TEAM_ENV, files: { [NOWMD]: '# Now — LWO-019\norder: LWO-019\nstate: IMPLEMENT\nOpen asks: a1\ncurrent step: x\n' } })
+  const r = await compact($, 'auto')
+  await clock.settle()
+  expect([isRebuild(r, 'idle'), kr(writes)]).toEqual([true, [['rebuild', 'idle']]])
+})
+
+test('C34 a stale waiting src: seen at T, 29 more turn.completes → held (idle-wait); 30 → reconcile, never held', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: W019() } })
+  box.usage = usageOf(100).value
+  for (let i = 0; i <= 29; i++) await turn($, box, clock, 100, 'c' + i)
+  box.usage = usageOf(600000).value
+  const a = await compact($, 'auto')
+  box.usage = usageOf(100).value
+  await turn($, box, clock, 100, 'x')
+  box.usage = usageOf(600000).value
+  const b = await compact($, 'auto')
+  await clock.settle()
+  expect([a.skip?.startsWith(HELD), b.messages?.[0].text, holdLines(writes).map((l) => l.reason)]).toEqual([true, 'RECONCILE: re-read the ledger log; the Now section may be out of date', ['idle-wait']])
+})
+
+test('C34o a stale waiting ledger that is not the newest: 018 waits untouched while 019 changes every turn; 29 more turn.completes → held for 018, 30 → rebuild/idle', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: ledger('IMPLEMENT', ' n.'), [P018]: W019() } })
+  box.usage = usageOf(100).value
+  for (let i = 0; i <= 29; i++) {
+    box.files[P019] = ledger('IMPLEMENT', ` n${i}.`)
+    await turn($, box, clock, 100, 'c' + i)
+  }
+  box.usage = usageOf(600000).value
+  const a = await compact($, 'auto')
+  box.usage = usageOf(100).value
+  box.files[P019] = ledger('IMPLEMENT', ' n30.')
+  await turn($, box, clock, 100, 'x')
+  box.usage = usageOf(600000).value
+  const b = await compact($, 'auto')
+  await clock.settle()
+  expect([a.skip?.includes('while LWO-018 waits'), isRebuild(b, 'idle'), holdLines(writes).map((l) => [l.reason, l.waitSource])]).toEqual([true, true, [['idle-wait', P018]]])
+})
+
+test('C35 held, then answered: an idle auto is held; the Now rewritten "Open asks: none." and one turn; the next idle auto → rebuild/idle', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: W019() } })
+  const a = await compact($, 'auto')
+  box.files[P019] = W019(' Open asks: none.')
+  await turn($, box, clock, 100, 't1')
+  const b = await compact($, 'auto')
+  await clock.settle()
+  expect([a.skip?.startsWith(HELD), isRebuild(b, 'idle'), kr(writes).filter(([k]) => k !== 'pass')]).toEqual([true, true, [['hold', 'idle-wait'], ['rebuild', 'idle']]])
+})
+
+test('C35r two idle autos in one gap while waiting: two skips, one hold line, then one holds line with count 2 at turn.complete', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: W019() } })
+  const a = await compact($, 'auto')
+  const b = await compact($, 'auto')
+  await turn($, box, clock, 100, 't1')
+  expect([a.skip?.startsWith(HELD), b.skip?.startsWith(HELD), box.coreIn.length, ours(writes).filter((l) => l.kind === 'hold' || l.kind === 'holds').map((l) => [l.kind, l.reason ?? null, l.count ?? null])]).toEqual([
+    true,
+    true,
+    0,
+    [['hold', 'idle-wait', null], ['holds', null, 2]],
+  ])
+})
+
+test('C36 D1: 018 waits and 019 does not → held for 018 with the full line; both wait → for 019 (the newest); neither → rebuild/idle', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: ledger('IMPLEMENT'), [P018]: W019() } })
+  const a = await compact($, 'auto')
+  await turn($, box, clock, 100, 't1')
+  box.files[P019] = W019(' Open asks: b2.')
+  const b = await compact($, 'auto')
+  await turn($, box, clock, 100, 't2')
+  box.files[P019] = ledger('IMPLEMENT')
+  box.files[P018] = ledger('IMPLEMENT')
+  const c = await compact($, 'auto')
+  await clock.settle()
+  expect([a.skip?.includes('while LWO-018 waits'), b.skip?.includes('while LWO-019 waits'), isRebuild(c, 'idle'), noHookError(writes), holdLines(writes).map(pick)]).toEqual([
+    true,
+    true,
+    true,
+    true,
+    [
+      { reason: 'idle-wait', source: P019, state: 'IMPLEMENT', others: [P018], wait: 'open-asks', waitSource: P018 },
+      { reason: 'idle-wait', source: P019, state: 'IMPLEMENT', others: [P018], wait: 'open-asks', waitSource: P019 },
+    ],
+  ])
+})
+
+test('C37 in a turn with a wait open at 600,000: hold/below-guard (the in-turn rule), not idle-wait', async ($, on) => {
+  const { clock, box, writes } = setup(on, { files: { [P019]: W019() } })
+  box.usage = usageOf(600000).value
+  await start($)
+  const r = await compact($, 'auto')
+  await clock.settle()
+  expect([r.skip?.includes('is open (State: IMPLEMENT)'), box.coreIn.length, kr(writes)]).toEqual([true, 0, [['hold', 'below-guard']]])
+})
+
+test('[hold] C38h in the hold run: a waiting idle at 359,000 → held for the operator wait; no wait → held as open (idle)', async ($, on) => {
+  const { clock, box } = setup(on, { files: { [P019]: W019() } })
+  const a = await compact($, 'auto')
+  await turn($, box, clock, 100, 't1')
+  box.files[P019] = ledger('IMPLEMENT')
+  const b = await compact($, 'auto')
+  await clock.settle()
+  expect([a.skip?.includes('waits on the operator (open-asks)'), b.skip?.includes('is open (State: IMPLEMENT)')]).toEqual([true, true])
+})
+
+test('[above-soft] C38s in the above-soft run: a waiting idle at 300,000 → held for the operator wait; no wait at 299,999 → held as open (idle)', async ($, on) => {
+  const { clock, box } = setup(on, { files: { [P019]: W019() } })
+  box.usage = usageOf(300000).value
+  const a = await compact($, 'auto')
+  await turn($, box, clock, 100, 't1')
+  box.files[P019] = ledger('IMPLEMENT')
+  box.usage = usageOf(299999).value
+  const b = await compact($, 'auto')
+  await clock.settle()
+  expect([a.skip?.includes('waits on the operator (open-asks)'), b.skip?.includes('is open (State: IMPLEMENT)')]).toEqual([true, true])
 })
