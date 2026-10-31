@@ -789,6 +789,71 @@ describe("hub-delegate kit", () => {
     "",
   ].join("\n");
 
+  // S04 (§3.3): the output rows' fixture tests, written as B's files by the row that runs them.
+  const passWith = (title: string, body: string[]) =>
+    ['import { expect, test } from "bun:test";', `test(${JSON.stringify(title)}, () => {`, ...body.map((x) => `  ${x}`), "  expect(1).toBe(1);", "});", ""].join("\n");
+  const UNHANDLED_TEST = [
+    'import { expect, test } from "bun:test";',
+    'test("RR unhandled pass", () => expect(1).toBe(1));',
+    "await Promise.resolve(1);",
+    'throw new ReferenceError("Cannot access x before initialization.");',
+    "",
+  ].join("\n");
+  const PRINT_TEST = passWith("RR print", ['console.log("# Unhandled error between tests");']);
+  const PRINT30_TEST = passWith("RR print30", ['console.log("# Unhandled error between tests");', `console.log(${JSON.stringify("-".repeat(30))});`]);
+  const PRINT31_TEST = passWith("RR print31", ['console.log("# Unhandled error between tests");', `console.log(${JSON.stringify("-".repeat(31))});`]);
+  // S04 r1 (CQ): the counter's other two edges, 32 dashes after the header and 31 with no header.
+  const PRINT32_TEST = passWith("RR print32", ['console.log("# Unhandled error between tests");', `console.log(${JSON.stringify("-".repeat(32))});`]);
+  const DASH31_TEST = passWith("RR dash31", [`console.log(${JSON.stringify("-".repeat(31))});`]);
+  const FORGE_TEST = passWith("RR forge", ['console.log(" 1 error");', 'console.log(" 7 fail");']);
+  const BINARY_TEST = [
+    'import { expect, test } from "bun:test";',
+    `test("RR bin pass", () => { process.stdout.write(${JSON.stringify("bin\0ary\n")}); console.log(" 7 fail"); });`,
+    `test(${JSON.stringify("RR bin\0red")}, () => expect(1).toBe(2));`,
+    `test("RR bin latin1", () => { process.stdout.write(Buffer.from(${JSON.stringify("(fail) RR bin\xff\xfe\xc3\n")}, "latin1")); });`,
+    "",
+  ].join("\n");
+  const GLUE_TEST = [
+    'import { afterAll, expect, test } from "bun:test";',
+    'test("RR glue", () => expect(1).toBe(1));',
+    'afterAll(() => { process.stdout.write(" 7 fail"); });',
+    "",
+  ].join("\n");
+  const FORGE15K_TEST = passWith("RR forge15k", ['for (let i = 0; i < 15_000; i++) console.log(" 1 pass");']);
+  const SNAP_TEST = 'import { expect, test } from "bun:test";\ntest("RR snap", () => expect({ a: 1 }).toMatchSnapshot());\n';
+  const SNAP_FILE = '// Bun Snapshot v1, https://bun.sh/docs/test/snapshots\n\nexports[`RR snap 1`] = `\n{\n  "a": 1,\n}\n`;\n';
+  const CRASH_TEST = [
+    'import { expect, test } from "bun:test";',
+    'test("RR crash red", () => expect(1).toBe(2));',
+    'test("RR crash kill", () => { process.kill(process.pid, "SIGKILL"); });',
+    "",
+  ].join("\n");
+  // cwd is <D>/w, so the log is ../out/log.txt.
+  const UNREADABLE_TEST = [
+    'import { expect, test } from "bun:test";',
+    'import { chmodSync } from "node:fs";',
+    'test("RR unreadable", () => { chmodSync("../out/log.txt", 0); expect(1).toBe(1); });',
+    "",
+  ].join("\n");
+  const NEST_TEST = passWith("RR nest", [`console.log(${JSON.stringify("\n 1 pass\n 0 fail\nRan 1 test across 1 file. [4.00ms]")});`]);
+  const TSC_B = {
+    "channel/tsconfig.json": '{"compilerOptions":{"strict":true,"noEmit":true},"files":["tsc.ts"]}\n',
+    "channel/tsc.ts": "export const x: number = 1;\n",
+  };
+  /** A summary line without bun's timing suffix ` [x.xxms]`. */
+  const untimed = (x: string) => x.replace(/ \[[0-9]+(\.[0-9]+)?m?s\]$/, "");
+  /**
+   * A bun count line (` N pass`, ` N fail`, ` N skip`, ` N todo`, ` N error(s)`): the count lines the
+   * merge keeps from blk (rerun.sh:114's second grep). blk itself (rerun.sh:86) is wider: it also
+   * takes `expect() calls`, `filtered out` and the snapshots lines. ERROR_RE is an error line alone.
+   */
+  const COUNT_RE = /^ *[0-9]+ (pass|fail|skip|todo|errors?)$/;
+  const ERROR_RE = /^ *[0-9]+ errors?$/;
+  const countLines = (l: string[]) => l.filter((x) => COUNT_RE.test(x));
+  const hasErrorLine = (l: string[]) => l.some((x) => ERROR_RE.test(x));
+  /** The sha1 of an empty staged diff. */
+  const EMPTY_SHA = "da39a3ee5e6b4b0d3255bfef95601890afd80709";
+
   type Rr = { f: Fx; repo: string; tree: string; base: string; sha: string; suites: string };
   type Files = Record<string, string | Buffer>;
 
@@ -2306,6 +2371,337 @@ describe("hub-delegate kit", () => {
     expect(logLines(d2).find((x) => x.startsWith("channel warm-up: rc="))).toMatch(/ errors=1 ran=\d+$/);
     expect(under(rd(c2, "summary.txt"), "channel bun test --isolate")).toContain(" 1 error");
   }, 200_000);
+
+  test("RR-ok", async () => {
+    const rr = rrFixture();
+    const d = freshD(rr);
+    const c = await rrCall(rr, d, [rr.tree, rr.base, rr.sha, suitesFile(rr, "ok.txt", ["bun test test/a.test.ts", "channel bun test --isolate"])]);
+    expect(rd(c, "rc.txt")).toBe("0\n");
+    // latin1 maps each byte to one char, so invalid UTF-8 is compared byte for byte.
+    const raw = readFileSync(path.join(d, "out", "summary.txt"), "latin1").split("\n");
+    const sum = raw.map((x) => untimed(x).replace(/^(channel warm-up: rc=[0-9]+) s=[0-9]+ /, "$1 "));
+    const log = logLines(d);
+    const nm = log.filter((x) => x.startsWith("nm-source: "));
+    expect(nm.length).toBeGreaterThanOrEqual(1);
+    const any = (prefix: string) => sum.find((x) => x.startsWith(prefix)) ?? `${prefix}(missing)`;
+    expect(any("path-order: python3=")).not.toEndWith("(missing)");
+    expect(any("tcache-entries: ")).toMatch(/^tcache-entries: [0-9]+$/);
+    expect(any("harness-new: ")).not.toEndWith("(missing)");
+    const logPath = path.join(realpathSync(d), "out", "log.txt");
+    const logSha = createHash("sha1").update(readFileSync(logPath)).digest("hex");
+    expect(sum).toEqual([
+      "remotes: 0",
+      ...nm,
+      any("path-order: python3="),
+      "== bun test test/a.test.ts",
+      "(fail) RR fixture red",
+      " 3 pass",
+      " 1 fail",
+      "Ran 4 tests across 1 file.",
+      "rc=1",
+      "unhandled=0",
+      "== channel bun test --isolate",
+      "channel warm-up: rc=0 errors=0 ran=1",
+      any("tcache-entries: "),
+      " 1 pass",
+      " 0 fail",
+      "Ran 1 test across 1 file.",
+      "rc=0",
+      "unhandled=0",
+      any("harness-new: "),
+      `log: ${logPath}`,
+      `log-sha1: ${logSha}`,
+      "rerun-rc: 0",
+      "",
+    ]);
+    expect(hasErrorLine(sum)).toBe(false);
+    // C-M1: every line above harness-new: is a log.txt line, verbatim.
+    for (const x of raw.slice(0, raw.findIndex((y) => y.startsWith("harness-new: ")))) expect(log).toContain(x);
+    // C5-3: the warm-up's output went to warmup.txt, not the log.
+    expect(readFileSync(path.join(d, "out", "warmup.txt")).length).toBeGreaterThan(0);
+    const ws = log.indexOf("channel warm-up: start");
+    expect(ws).toBeGreaterThanOrEqual(0);
+    expect(log[ws + 1]).toStartWith("channel warm-up: rc=");
+    // The write order: summary, then rc, then done; done holds a `date -u` stamp.
+    const born = (n: string) => statSync(path.join(d, "out", n), { bigint: true }).birthtimeNs;
+    expect(born("summary.txt")).toBeLessThan(born("rc.txt"));
+    expect(born("rc.txt")).toBeLessThan(born("done"));
+    expect(rd(c, "done")).toMatch(/^[A-Z][a-z]{2} [A-Z][a-z]{2} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} UTC [0-9]{4}\n$/);
+  }, 200_000);
+
+  test("RR-empty", async () => {
+    const rr = rrFixture();
+    fgit(rr.f, ["reset", "-q"], rr.tree);
+    fgit(rr.f, ["checkout", "--", "test/a.test.ts"], rr.tree);
+    expect(stagedSha(rr)).toBe(EMPTY_SHA);
+    const d = freshD(rr);
+    const c = await rrCall(rr, d, [rr.tree, rr.base, EMPTY_SHA, rr.suites]);
+    expect(rd(c, "rc.txt")).toBe("0\n");
+    const sum = rd(c, "summary.txt").split("\n");
+    expect(sum).toContain("staged: (empty)");
+    expect(sum).toContain("== bun test test/a.test.ts");
+    // B's own test/a.test.ts (A_TEST): 2 pass and 1 red, 3 tests; T's staged fourth test is gone.
+    expect(under(rd(c, "summary.txt"), "bun test test/a.test.ts").map(untimed)).toEqual([
+      "(fail) RR fixture red",
+      " 2 pass",
+      " 1 fail",
+      "Ran 3 tests across 1 file.",
+      "rc=1",
+      "unhandled=0",
+    ]);
+    expect(sum).toContain("rerun-rc: 0");
+  }, 200_000);
+
+  test("RR-suites", async () => {
+    // The presence control is RR-ok: its suites file runs.
+    const rr = rrFixture();
+    const lines = (d: string) => [
+      "bun test test/../x",
+      "bun test /etc",
+      "bun test",
+      'rm -rf "$D/marker"',
+      `channel tsc; touch ${d}/m2`,
+      `bun test test/a.test.ts && touch ${d}/m3`,
+    ];
+    for (const [i, line] of lines("").entries()) {
+      const d = freshD(rr, `dsuite${i}`);
+      const marker = put(path.join(d, "marker"), "m\n");
+      const real = lines(d)[i];
+      const c = await rrCall(rr, d, [rr.tree, rr.base, rr.sha, suitesFile(rr, `suites${i}.txt`, [real])]);
+      expect(`${line}: ${rd(c, "rc.txt")}`).toBe(`${line}: 2\n`);
+      const sum = rd(c, "summary.txt").split("\n");
+      // rerun.sh:171, the one-line file's line 1 fails both allowed shapes.
+      expect(`${line}: ${sum.filter((x) => x.startsWith("R5")).join("|")}`).toBe(`${line}: R5: bad line 1`);
+      expect(sum.filter((x) => x.startsWith("== "))).toEqual([]);
+      expect(existsSync(marker)).toBe(true);
+      expect(existsSync(path.join(d, "m2"))).toBe(false);
+      expect(existsSync(path.join(d, "m3"))).toBe(false);
+    }
+  }, 200_000);
+
+  test("RR-absent", async () => {
+    // The ±1 pair: one valid line runs (RR-ok).
+    const rr = rrFixture();
+    // Each case's text is its rerun.sh site's: :156 no file, :161 CR, :173 no suite left.
+    const cases: [string, string | null, (file: string) => string][] = [
+      ["0 bytes", "", () => "R5: no suite"],
+      // rerun.sh:156 prints the path through esc, which quotes only bytes outside printable ASCII
+      // (rerun.sh:36); fixture paths are plain.
+      ["absent", null, (file) => `R5: no suites file ${file}`],
+      ["newline", "\n", () => "R5: no suite"],
+      ["blank", "  \n", () => "R5: no suite"],
+      // The CR line is refused by its own check (the charset check would refuse it too).
+      ["crlf", "bun test test/a.test.ts\r\n", () => "R5: CR in line 1"],
+    ];
+    for (const [i, [name, bytes, want]] of cases.entries()) {
+      const file = path.join(rr.f.root, `absent${i}.txt`);
+      if (bytes !== null) put(file, bytes);
+      const c = await rrCall(rr, freshD(rr, `dabsent${i}`), [rr.tree, rr.base, rr.sha, file]);
+      expect(`${name}: ${rd(c, "rc.txt")}`).toBe(`${name}: 2\n`);
+      const sum = rd(c, "summary.txt").split("\n");
+      expect(`${name}: ${sum.filter((x) => x.startsWith("R5")).join("|")}`).toBe(`${name}: ${want(file)}`);
+      expect(sum.filter((x) => x.startsWith("== "))).toEqual([]);
+    }
+  }, 200_000);
+
+  test("RR-binary-log", async () => {
+    const rr = rrFixture({ b: { "test/binary.test.ts": BINARY_TEST, "test/unreadable.test.ts": UNREADABLE_TEST } });
+    const d = freshD(rr);
+    const c = await rrCall(rr, d, [rr.tree, rr.base, rr.sha, suitesFile(rr, "bin.txt", ["bun test test/binary.test.ts"])], {
+      env: { LANG: "en_US.UTF-8" },
+    });
+    expect(rd(c, "rc.txt")).toBe("0\n");
+    expect(readFileSync(path.join(d, "out", "log.txt")).includes(0)).toBe(true);
+    // latin1 maps each byte to one char, so the NUL and the invalid UTF-8 bytes compare as bytes.
+    const sum = readFileSync(path.join(d, "out", "summary.txt"), "latin1").split("\n").map(untimed);
+    const blk = under(sum.join("\n"), "bun test test/binary.test.ts");
+    expect(blk).toContain("(fail) RR bin\0red");
+    expect(blk).toContain("(fail) RR bin\xff\xfe\xc3");
+    expect(blk).toContain(" 2 pass");
+    expect(blk).toContain(" 1 fail");
+    expect(blk).toContain("Ran 3 tests across 1 file.");
+    expect(blk).toContain("rc=1");
+    expect(blk).not.toContain(" 7 fail");
+    expect(sum.some((x) => x.startsWith("Binary file"))).toBe(false);
+    expect(sum.some((x) => x.startsWith("copy: FAILED"))).toBe(false);
+    // Presence control: a log with no NUL byte (RR-ok's suite) fails the same check.
+    const d0 = freshD(rr, "dnul");
+    expect(rd(await rrCall(rr, d0, [rr.tree, rr.base, rr.sha, rr.suites]), "rc.txt")).toBe("0\n");
+    expect(readFileSync(path.join(d0, "out", "log.txt")).includes(0)).toBe(false);
+    // C8-4: a log the greps cannot read.
+    const d2 = freshD(rr, "dunread");
+    const log2 = path.join(d2, "out", "log.txt");
+    let sum2: string[] = [];
+    try {
+      const c2 = await rrCall(rr, d2, [rr.tree, rr.base, rr.sha, suitesFile(rr, "unread.txt", ["bun test test/unreadable.test.ts"])]);
+      chmodSync(log2, 0o644);
+      expect(rd(c2, "rc.txt")).toBe("0\n");
+      sum2 = rd(c2, "summary.txt").split("\n");
+    } finally {
+      if (existsSync(log2)) chmodSync(log2, 0o644);
+    }
+    // v9 §7: a log.txt at mode 000 writes `copy: FAILED grep rc=2` twice, the merge's (rerun.sh:114)
+    // and blk's (:86); exactly two, so removing either echo is red.
+    expect(sum2.filter((x) => x.startsWith("copy: FAILED"))).toEqual(["copy: FAILED grep rc=2", "copy: FAILED grep rc=2"]);
+    expect(sum2.some((x) => x.startsWith("Ran "))).toBe(false);
+  }, 200_000);
+
+  test("RR-unhandled", async () => {
+    const rr = rrFixture({
+      b: {
+        "test/unhandled.test.ts": UNHANDLED_TEST,
+        "test/print.test.ts": PRINT_TEST,
+        "test/print30.test.ts": PRINT30_TEST,
+        "test/print31.test.ts": PRINT31_TEST,
+        "test/print32.test.ts": PRINT32_TEST,
+        "test/dash31.test.ts": DASH31_TEST,
+        "test/forge.test.ts": FORGE_TEST,
+        "test/glue.test.ts": GLUE_TEST,
+        "test/forge15k.test.ts": FORGE15K_TEST,
+        "test/snap.test.ts": SNAP_TEST,
+        "test/__snapshots__/snap.test.ts.snap": SNAP_FILE,
+        "test/nest.test.ts": NEST_TEST,
+      },
+    });
+    let n = 0;
+    const one = async (line: string) => {
+      const i = n++;
+      const d = freshD(rr, `dun${i}`);
+      const c = await rrCall(rr, d, [rr.tree, rr.base, rr.sha, suitesFile(rr, `un${i}.txt`, [line])]);
+      expect(rd(c, "rc.txt")).toBe("0\n");
+      const sum = rd(c, "summary.txt");
+      return { d, sum: sum.split("\n"), blk: under(sum, line).map(untimed) };
+    };
+    const u = await one("bun test test/unhandled.test.ts");
+    for (const x of ["unhandled=1", " 0 pass", " 1 fail", " 1 error", "rc=1"]) expect(u.blk).toContain(x);
+    const p = await one("bun test test/print.test.ts");
+    for (const x of ["unhandled=0", " 1 pass", " 0 fail"]) expect(p.blk).toContain(x);
+    const p30 = await one("bun test test/print30.test.ts");
+    expect(p30.blk).toContain("unhandled=0");
+    const p31 = await one("bun test test/print31.test.ts");
+    for (const x of ["unhandled=1", " 1 pass", " 0 fail"]) expect(p31.blk).toContain(x);
+    // The counter's edges: exactly 31 dashes (32 is not), and only right after the header line.
+    const p32 = await one("bun test test/print32.test.ts");
+    for (const x of ["unhandled=0", " 1 pass", " 0 fail"]) expect(p32.blk).toContain(x);
+    const d31 = await one("bun test test/dash31.test.ts");
+    for (const x of ["unhandled=0", " 1 pass", " 0 fail"]) expect(d31.blk).toContain(x);
+    for (const r of [p, p30, p31, p32, d31]) expect(hasErrorLine(r.blk)).toBe(false);
+    // EC6-2: count-shaped lines outside bun's block stay in the log only.
+    const f = await one("bun test test/forge.test.ts");
+    expect(f.blk).toEqual([" 1 pass", " 0 fail", "Ran 1 test across 1 file.", "rc=0", "unhandled=0"]);
+    const flog = logLines(f.d);
+    expect(flog).toContain(" 1 error");
+    expect(flog).toContain(" 7 fail");
+    // EC7-2: a block glued onto a printed line is not copied.
+    const g = await one("bun test test/glue.test.ts");
+    expect(countLines(g.blk)).toEqual([]);
+    expect(g.blk).toContain("Ran 1 test across 1 file.");
+    expect(g.blk).toContain("rc=0");
+    // EC7-6.
+    const k = await one("bun test test/forge15k.test.ts");
+    expect(k.blk).toEqual([" 1 pass", " 0 fail", "Ran 1 test across 1 file.", "rc=0", "unhandled=0"]);
+    expect(k.sum.some((x) => x.startsWith("copy: FAILED"))).toBe(false);
+    // C7-1: bun's snapshots line sits between ` 1 error` and Ran.
+    const sn = await one("bun test test/unhandled.test.ts test/snap.test.ts");
+    expect(sn.blk).toEqual([" 1 pass", " 1 fail", " 1 error", "Ran 2 tests across 2 files.", "rc=1", "unhandled=1"]);
+    // EC8-2: a nested block printed by a test: two Ran lines, two ` 0 fail` lines.
+    const ne = await one("bun test test/nest.test.ts");
+    expect(ne.blk.filter((x) => x.startsWith("Ran ")).length).toBe(2);
+    expect(ne.blk.filter((x) => x === " 0 fail").length).toBe(2);
+    expect(ne.blk).toContain("rc=0");
+  }, 300_000);
+
+  test("RR-crash", async () => {
+    const rr = rrFixture({ b: { "test/crash.test.ts": CRASH_TEST } });
+    const c = await rrCall(rr, freshD(rr), [rr.tree, rr.base, rr.sha, suitesFile(rr, "crash.txt", ["bun test test/crash.test.ts", "bun test test/nomatch.test.ts"])]);
+    expect(rd(c, "rc.txt")).toBe("0\n");
+    const sum = rd(c, "summary.txt");
+    const a = under(sum, "bun test test/crash.test.ts").map(untimed);
+    expect(a).toContain("(fail) RR crash red");
+    expect(countLines(a)).toEqual([]);
+    expect(a.some((x) => x.startsWith("Ran "))).toBe(false);
+    expect(a).toContain("rc=137");
+    const b = under(sum, "bun test test/nomatch.test.ts");
+    expect(b.some((x) => x.startsWith("(fail) "))).toBe(false);
+    expect(countLines(b)).toEqual([]);
+    expect(b.some((x) => x.startsWith("Ran "))).toBe(false);
+    expect(b).toContain("rc=1");
+    expect(sum.split("\n")).toContain("rerun-rc: 0");
+  }, 200_000);
+
+  test("RR-tsc", async () => {
+    // bunx runs only on the fixture HOME's copy of the cache; the live cache is never written. The
+    // row watches $BUN_INSTALL_CACHE_DIR when set, else ~/.bun/install/cache: the same choice as
+    // withCache's cp source below (rerun.sh's own source is always $HOME/.bun/install/cache, :379-381).
+    const live = realpathSync(process.env.BUN_INSTALL_CACHE_DIR || path.join(process.env.HOME as string, ".bun", "install", "cache"));
+    const before = [statSync(live).mtimeMs, readdirSync(live).length];
+    const rrG = rrFixture({ b: TSC_B });
+    const rrR = rrFixture({ b: TSC_B, stage: { "channel/tsc.ts": 'export const x: number = "s";\n' } });
+    // Older than anything the row could write: after the row, no path under live is newer, by mtime
+    // or by ctime (a chmod, an xattr, a write that sets its mtime back).
+    const stamp = put(path.join(rrG.f.root, "live.stamp"), "s\n");
+    /** Each moved link as [its path under dst, its resolved target under dst]. */
+    type Moved = [string, string][];
+    /** A link's readlink text, or `ERR <code>` when it cannot be read (so the label carries it). */
+    const linkText = (p: string) => {
+      try {
+        return readlinkSync(p);
+      } catch (e) {
+        return `ERR ${(e as NodeJS.ErrnoException).code}`;
+      }
+    };
+    const withCache = (rr: Rr): [Rr, Moved] => {
+      const dst = path.join(rr.f.root, ".bun", "install", "cache");
+      mkdirSync(path.dirname(dst), { recursive: true });
+      expect(Bun.spawnSync(["/bin/cp", "-cR", live, dst]).exitCode).toBe(0);
+      // bun's links are absolute into the cache they sit in; the copy's would still name the live
+      // cache, which rerun.sh refuses as a link out of the cache (RR-env). Point them into the copy.
+      const links = Bun.spawnSync(["/usr/bin/find", dst, "-type", "l", "-print0"], { stdout: "pipe" }).stdout.toString().split("\0").filter(Boolean);
+      const moved: Moved = [];
+      const dstReal = realpathSync(dst);
+      for (const l of links) {
+        const t = readlinkSync(l);
+        if (!t.startsWith(live + "/")) continue;
+        unlinkSync(l);
+        symlinkSync(dst + t.slice(live.length), l);
+        // rerun.sh:398 takes the link's realpath and strips csrc, the copy's realpath (:380), so the
+        // expected target is the resolved one: a chain or a linked dir in the path resolves the same.
+        moved.push([l.slice(dst.length + 1), path.relative(dstReal, realpathSync(l))]);
+      }
+      // Every link of the copy was one into live and is now one into the copy.
+      expect(`${moved.length} of ${links.length}`).toBe(`${links.length} of ${links.length}`);
+      expect(moved.length).toBeGreaterThanOrEqual(1);
+      return [rr, moved];
+    };
+    const tsc = async ([rr, moved]: [Rr, Moved]) => {
+      const d = freshD(rr);
+      const c = await rrCall(rr, d, [rr.tree, rr.base, rr.sha, suitesFile(rr, "tsc.txt", ["channel tsc"])]);
+      expect(rd(c, "rc.txt")).toBe("0\n");
+      expect(logLines(d)).toContain("bun-cache: copied");
+      // rerun.sh's own rewrite (rerun.sh:399-400) points every one of those links into <D>/bun-cache,
+      // at the same target: each is checked exactly, so a link left out or sent elsewhere is red.
+      const runCache = path.join(realpathSync(d), "bun-cache");
+      const wrong = moved
+        .map(([rel, target]) => [rel, linkText(`${runCache}/${rel}`), `${runCache}/${target}`])
+        .filter(([, got, want]) => got !== want);
+      const shown = wrong.slice(0, 3).map(([rel, got]) => (got.startsWith("ERR ") ? `${rel} (${got})` : rel));
+      expect(`${wrong.length} of ${moved.length} not rewritten: ${shown.join(", ")}`).toBe(`0 of ${moved.length} not rewritten: `);
+      return under(rd(c, "summary.txt"), "channel tsc");
+    };
+    const green = await tsc(withCache(rrG));
+    expect(green).toContain("rc=0");
+    expect(green.some((x) => x.includes("error TS"))).toBe(false);
+    const red = await tsc(withCache(rrR));
+    expect(red.filter((x) => x.includes("error TS2322:")).length).toBe(1);
+    expect(red).toContain("rc=2");
+    expect([statSync(live).mtimeMs, readdirSync(live).length]).toEqual(before);
+    // Another process touching the live cache during the row also turns these red: per the standing
+    // rule, such a red is re-run alone before it counts.
+    for (const flag of ["-newer", "-cnewer"]) {
+      const p = Bun.spawnSync(["/usr/bin/find", live, flag, stamp], { stdout: "pipe", stderr: "pipe" });
+      expect(`${flag}: rc=${p.exitCode} ${p.stdout.toString()} stderr=${p.stderr.toString()}`).toBe(`${flag}: rc=0  stderr=`);
+    }
+  }, 300_000);
 
   test("RR-git-abs", () => {
     const span = runShSpan();
