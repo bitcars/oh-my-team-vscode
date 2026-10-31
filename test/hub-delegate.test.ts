@@ -29,6 +29,8 @@ import { ledgerNow } from "../hooks/ledger-compact.js";
 const REPO = path.join(import.meta.dir, "..");
 const LEDGER_SH = path.join(REPO, "skills", "hub-delegate", "ledger.sh");
 const RERUN_SH = path.join(REPO, "skills", "hub-delegate", "rerun.sh");
+const HUB_READER = path.join(REPO, "agents", "hub-reader.md");
+const READER_PROBE = path.join(REPO, "skills", "hub-delegate", "briefs", "reader-probe.txt");
 const HOOKS = path.join(REPO, "hooks");
 const FIX = path.join(import.meta.dir, "fixtures", "hub-delegate");
 const VALID = readFileSync(path.join(FIX, "LWO-001-x.md"));
@@ -2772,5 +2774,71 @@ describe("hub-delegate kit", () => {
       expect(raw.split(from).length - 1).toBe(1);
       expect(tools(raw.replace(from, to)).length).toBe(1);
     }
+  });
+
+  // ── §3.4 hub-reader ────────────────────────────────────────────────────────
+
+  test("HR-front", () => {
+    // check() throws at the first rule a file breaks. The row runs it on the real file, then on five
+    // broken copies, each of which must throw.
+    const check = (text: string) => {
+      const lines = text.split("\n");
+      expect(lines[0]).toBe("---");
+      const end = lines.indexOf("---", 1);
+      expect(end).toBeGreaterThan(1);
+      const front = lines.slice(1, end);
+      // Every frontmatter line is one top-level `key: value`: no block list, no indented line, so a
+      // tool can only be named on the one tools: line.
+      expect(front.filter((x) => !/^[A-Za-z][A-Za-z0-9_-]*: \S/.test(x))).toEqual([]);
+      const keys = front.map((x) => x.slice(0, x.indexOf(":")));
+      const value = (k: string) =>
+        front.filter((x) => x.startsWith(`${k}:`)).map((x) => x.slice(k.length + 1).trim());
+      expect(keys.filter((k) => k === "tools")).toEqual(["tools"]);
+      const items = value("tools")[0]?.match(/^\[(.*)\]$/)?.[1]?.split(",").map((x) => x.trim()) ?? [];
+      expect(items.sort()).toEqual(["Glob", "Grep", "Read"]);
+      expect(value("name")).toEqual(["hub-reader"]);
+      expect(value("model")).toEqual(["sonnet"]);
+      // No key that widens or replaces the list, in any spelling.
+      expect(keys.filter((k) => /^(disallowed[-_]?tools|mcp[-_]?servers|permission[-_]?mode|hooks)$/i.test(k))).toEqual([]);
+      // Nor any key this row does not know (memory:, skills:, ...): only these four.
+      expect([...keys].sort()).toEqual(["description", "model", "name", "tools"]);
+      expect(lines.slice(end + 1).join("\n")).toContain("Model: sonnet, because");
+    };
+    const real = readFileSync(HUB_READER, "utf8");
+    check(real);
+    const tl = "tools: [Read, Grep, Glob]";
+    expect(real.split("\n").filter((x) => x === tl)).toEqual([tl]);
+    const copies: [string, string][] = [
+      ["widened", real.replace(tl, "tools: [Read, Grep, Glob, Bash]")],
+      ["second tools key", real.replace(tl, `${tl}\ntools: [Bash]`)],
+      ["indented list item", real.replace(tl, `${tl}\n  - Bash`)],
+      ["disallowedTools", real.replace(tl, `${tl}\ndisallowedTools: [Write]`)],
+      ["tools line removed", real.replace(`${tl}\n`, "")],
+    ];
+    for (const [label, copy] of copies) {
+      expect(copy).not.toBe(real);
+      let got = "passed";
+      try {
+        check(copy);
+      } catch {
+        got = "threw";
+      }
+      expect(`${label}: ${got}`).toBe(`${label}: threw`);
+    }
+  });
+
+  test("HR-probe", () => {
+    const rec = readFileSync(READER_PROBE, "utf8").split("\n");
+    const sha256 = createHash("sha256").update(readFileSync(HUB_READER)).digest("hex");
+    // A mismatch means agents/hub-reader.md changed since V-P: re-run the probe and rewrite this
+    // record.
+    expect(rec.filter((x) => x.startsWith("agent-sha256:"))).toEqual([`agent-sha256: ${sha256}`]);
+    // V-P's three runs: the main thread and the no-tools-line subagent each made both files; the
+    // hub-reader subagent made no tool call and no file.
+    expect(rec.filter((x) => /^[PCT]: /.test(x))).toEqual([
+      "P: files marker-main touch-main",
+      "C: files marker-subfull touch-subfull",
+      "T: oh-my-team:hub-reader tool_use 0 files none",
+    ]);
   });
 });
