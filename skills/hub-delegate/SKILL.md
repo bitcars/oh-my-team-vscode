@@ -31,6 +31,59 @@ for the vault, your Vault row's `V=` line followed by `echo "$V"`. The rules are
   file changed under it: `show` and fix by hand. Before an ask or a ruling, `show` the ledger, so
   the Now block you rely on is the one in the file.
 
+## 2. The suites on a team's final tree: rerun.sh
+
+1. The team has staged its final files and reported `staged: <sha1>`. Compute it yourself in the
+   team's worktree: `git -C "<team worktree>" diff --cached --binary | shasum`, and take the 40
+   hex before the two spaces. A different value: no run; ask the team.
+2. `<base sha>` is the full 40 hex: `git -C "<team worktree>" rev-parse <the plan's base>`.
+3. Make a fresh dir for every launch with the line below (under /tmp, never `$TMPDIR`) and paste
+   the printed path as `<D>`: `pwd -P` gives the `/private/tmp/…` form that rerun.sh passes to
+   `--run`, which the wait lines test (a bare `mktemp -d /tmp/…` prints `/tmp/…`, which never
+   matches).
+
+       D=$(cd "$(mktemp -d /tmp/hub-rerun-<lwo-nnn>-XXXX)" && pwd -P); echo "$D"
+
+   Write `<D>/suites.txt`, one suite per line, from these forms only: `bun test <test/…>…`, `channel bun test --isolate`, `channel tsc`.
+4. Run it alone: no other root suite in any session (ask the team to hold its runs). Launch it
+   with one ordinary Bash call; it detaches and prints `pid:`:
+
+       bash "$OMT_PLUGIN_DIR/skills/hub-delegate/rerun.sh" "<D>" "<team worktree>" <base sha> <staged sha1> "<D>/suites.txt"
+
+   No `pid:` line, or an exit other than 0: there is no run. Read the printed reason and
+   `<D>/out/launcher.txt` if it exists. Exit 3 (a CLAUDE.md in `<D>` or above it): report it to the operator.
+   Exit 2 with `run alive: <pid>`: a run is already going in that dir; wait on it.
+   With a `pid:` line, log it at once:
+
+       bash "$OMT_PLUGIN_DIR/skills/hub-delegate/ledger.sh" "<ledger>" log "rerun <D> pid <N>"
+
+   Then write this line into the Now block, on its own line and with no `Waiting for:` words, so a
+   rebuilt context can re-arm the wait from its mark:
+
+       Rerun: <D> pid <N> mark 10800.
+
+5. Wait with a Monitor, its timeout_ms parameter 1800000 (the tool's 30-minute cap; not the
+   `timeout` command); re-arm it each time it expires until it prints an `END` line:
+
+       D=<D>; a() { ps -ww -o command= -p "$(cat "$D/out/pid")" 2>/dev/null | grep -qF -- "--run $D "; }; until [ -e "$D/out/done" ] || ! a || [ $(( $(date +%s) - $(stat -f %m "$D/out/pid") )) -ge 10800 ]; do sleep 30; done; if [ -e "$D/out/done" ]; then echo "END done: $(tail -1 "$D/out/summary.txt")"; elif ! a; then echo "END dead: pid gone or not this run, no done, no run; group: $(ps -p "$(cat "$D/out/pid")" >/dev/null || pgrep -g "$(cat "$D/out/pid")" | tr '\n' ' ')"; else echo "END 3h: pid $(cat "$D/out/pid") alive, escalate"; fi
+
+   Never sleep in the foreground, never use the `timeout` command. The line tests the run by its
+   command (`ps -ww -o command= -p <pid>` holding `--run <D> `, with the space), never by `kill -0`: a pid that is
+   gone or names another process is not this run. After a "wait" pick, the same
+   line with `10800` replaced by the next mark (`21600` for 6 h, then `32400`, and so on).
+   Write the current mark into the Rerun line each time. After a rebuild, re-arm by the Rerun line's form: `mark <S>` re-arms this line from that mark (never from 10800); `killed K=<K>` re-arms step 6's kill line with the `<K>` in `<D>/out/term-K` when that file exists, else the line's; ` asked 3h` or ` asked stuck-after-term` (an END whose pick is pending) re-tests `[ -e "$D/out/done" ]` and the run's command first; done or not this run: rewrite the line to `ended done.` or `ended dead.` first, withdraw the open ask in your next message, then go to step 7 or `END dead`; still this run: act on the operator's pick, never asking twice for one END; ` asked group-alive` re-runs the group test first (empty: `END group-empty`), then acts on the operator's pick, never asking twice; `ended` re-arms nothing, except `group-wait G=<G>` without ` asked`, which re-arms step 6's group-wait line with that `<G>`; never relaunch while that group lists a pid. More than one Rerun line: the last one written wins; delete the others.
+   On every `END` line, before you act on it, rewrite the Rerun line: `END done` and `END dead` give `Rerun: <D> pid <N> ended <done or dead>.`; `END 3h`, `END stuck-after-term` and `END group-alive` add ` asked <END word>` before its final dot; `END group-empty` gives `Rerun: <D> pid <N> ended <abandoned or dead>.`; the Now block holds at most one Rerun line.
+6. `END 3h`: escalate the stuck gate to the operator with the pid, `<D>` and the options (kill by that pid / wait); on the operator's pick "kill" run the kill call below once (it first checks for `<D>/out/done` and prints `END done` if the run has ended, which goes to step 7; then it checks the run's command, sends one TERM, never -9, and writes the TERM time to `<D>/out/term-K`), paste the printed `K=` number as `<K>`, log the TERM with ledger.sh, set the Rerun line to `Rerun: <D> pid <N> killed K=<K>.` (rewritten with each new `<K>`), and re-arm with the line below, which has no 3 h clause and ends 15 min after `<K>` (`rerun-rc: killed` is no run); on "wait" re-arm at the next mark, logging each mark's expiry (not each Monitor expiry) with ledger.sh; after a "wait" pick, an `END 3h` at a later mark is that mark's expiry: log it and re-arm at the next mark, do not ask again; without that pick never signal a run.
+
+       D=<D>; if [ -e "$D/out/done" ]; then echo "END done: $(tail -1 "$D/out/summary.txt")"; elif ps -ww -o command= -p <pid> | grep -qF -- "--run $D "; then kill -TERM <pid>; K=$(date +%s); echo "$K" > "$D/out/term-K"; echo "K=$K"; else echo "END dead: pid <pid> is not this run"; fi
+
+       D=<D>; K=<K>; a() { ps -ww -o command= -p "$(cat "$D/out/pid")" 2>/dev/null | grep -qF -- "--run $D "; }; until [ -e "$D/out/done" ] || ! a || [ $(( $(date +%s) - K )) -ge 900 ]; do sleep 30; done; if [ -e "$D/out/done" ]; then echo "END done: $(tail -1 "$D/out/summary.txt")"; elif ! a; then echo "END dead: pid gone or not this run, no done, no run; group: $(ps -p "$(cat "$D/out/pid")" >/dev/null || pgrep -g "$(cat "$D/out/pid")" | tr '\n' ' ')"; else echo "END stuck-after-term: pid $(cat "$D/out/pid") alive 15 min after TERM"; fi
+
+   `END stuck-after-term`: first re-test `[ -e "$D/out/done" ]` and the run's command (done: step 7; not this run: `END dead`); still alive: log it with ledger.sh, quote `ps -o pid,stat,command -g <pid>` (a header-only quote means the group ended: read it as `END dead`), and escalate to the operator with two options, every time it happens: "re-arm 15 min" (a new `<K>` from `date +%s`, written to `<D>/out/term-K`, the Rerun line rewritten, the same line) and "abandon the run" (log `rerun-rc: killed`, no verdict for its suites, quote the group, signal nothing more); never -9, never a second TERM, never your own decision without the pick.
+   After "abandon the run": no new rerun.sh until the group is empty; set the Rerun line to `Rerun: <D> pid <N> ended abandoned group-wait G=<G>.` (`<G>` from `date +%s`), run the group-wait line below, and ask the operator with two options, "you end the processes yourself" (by the pids quoted) and "wait, re-arm 15 min" (a new `<G>`, written into the Rerun line, the same line); `END group-alive`: add ` asked group-alive` to the Rerun line and ask the same two options again; send no other signal: never -KILL, never a second TERM, nothing else; on `END group-empty` (quote it) rewrite the Rerun line to `Rerun: <D> pid <N> ended <abandoned or dead>.`, log it with ledger.sh, and only then relaunch.
+
+       D=<D>; G=<G>; g() { ps -p "$(cat "$D/out/pid")" >/dev/null && ! ps -ww -o command= -p "$(cat "$D/out/pid")" | grep -qF -- "--run $D " || pgrep -g "$(cat "$D/out/pid")"; }; until [ -z "$(g)" ] || [ $(( $(date +%s) - G )) -ge 900 ]; do sleep 30; done; if [ -z "$(g)" ]; then echo "END group-empty"; else echo "END group-alive: $(g | tr '\n' ' ')"; fi
+
 ## 3. A team document against its reference, and the operator draft: hub-reader
 
 Run `shasum` on the reference and the document, and compare the document's with the sha1 in the

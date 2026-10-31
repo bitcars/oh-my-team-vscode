@@ -2919,4 +2919,141 @@ describe("hub-delegate kit", () => {
       }
     }
   });
+
+  test("SK-pid-reuse", async () => {
+    // SKILL §2 step 5's Monitor line and step 3's D= line, taken from SKILL.md (never a copy here).
+    const skill = readFileSync(SKILL_MD, "utf8").split("\n").map((x) => x.trim());
+    const waits = skill.filter((x) => x.startsWith("D=<D>; a() {") && x.includes(" -ge 10800 ]"));
+    expect(waits.length).toBe(1);
+    const makes = skill.filter((x) => x.startsWith("D=$(") && x.includes("mktemp -d /tmp/hub-rerun-<lwo-nnn>-XXXX"));
+    expect(makes.length).toBe(1);
+    const wait = waits[0];
+    expect(wait.split("D=<D>;").length).toBe(2);
+    expect(wait.split(" -ge 10800 ]").length).toBe(2);
+    const env = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", HOME: "/nonexistent", LC_ALL: "C" };
+    /** Step 5's line with <D> = d and the mark 0, run with bash -c; its stdout. At mark 0 it returns in ms. */
+    const step5 = (d: string) => {
+      const line = wait.replace("D=<D>;", `D=${d};`).replace(" -ge 10800 ]", " -ge 0 ]");
+      const p = Bun.spawnSync(["/bin/bash", "-c", line], { env, stdout: "pipe", stderr: "pipe", timeout: 20_000 });
+      expect(p.exitCode).toBe(0);
+      return p.stdout.toString();
+    };
+    const alive = (pid: number) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const ps = (field: string, pid: number) =>
+      Bun.spawnSync(["/bin/ps", "-ww", "-o", `${field}=`, "-p", String(pid)], { stdout: "pipe", stderr: "ignore" })
+        .stdout.toString()
+        .trim();
+    const command = (pid: number) => ps("command", pid);
+    const kids = (pid: number) =>
+      Bun.spawnSync(["/usr/bin/pgrep", "-P", String(pid)], { stdout: "pipe", stderr: "ignore" })
+        .stdout.toString()
+        .split("\n")
+        .filter((x) => /^\d+$/.test(x))
+        .map(Number);
+    const f = fx();
+    // Every process the row started, by exact pid, with the command it was started as: the finally
+    // signals a pid only while it still runs that command (a reused pid is never signalled).
+    const started = new Map<number, string>();
+    const runs: number[] = [];
+    const remove: string[] = [];
+    // The step-3 dir is removed only when its real path is exactly this form under the kit's TMP.
+    const step3Dir = new RegExp(`^${TMP.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/hub-rerun-lwo-000-[A-Za-z0-9]{4}$`);
+    const SLEEP = "/bin/sleep 60";
+    // A fake run: bash running a script that sleeps 60 (its sleep is a child the row also ends).
+    const fake = put(path.join(f.root, "fake-run.sh"), `#!/bin/bash\n${SLEEP}\n`);
+    // skills/plan-audit/run.sh:8's form: resolve the dir with pwd -P, then the run's argv `--run <D> tree`.
+    const launch = put(
+      path.join(f.root, "launch.sh"),
+      '#!/bin/bash\nD=$(cd "$1" 2>/dev/null && pwd -P) || exit 2\nexec /bin/bash "$2" --run "$D" tree\n',
+    );
+    const fakeRun = async (argv: string[], d: string) => {
+      const want = `/bin/bash ${fake} --run ${d} tree`;
+      const p = Bun.spawn(argv, { env, stdio: ["ignore", "ignore", "ignore"] });
+      started.set(p.pid, want);
+      runs.push(p.pid);
+      for (let i = 0; i < 100 && !(command(p.pid) === want && kids(p.pid).length > 0); i++) await Bun.sleep(50);
+      const k = kids(p.pid);
+      for (const c of k) started.set(c, SLEEP);
+      expect(k.length).toBe(1);
+      expect(command(p.pid)).toBe(want);
+      return p.pid;
+    };
+    const writePid = (d: string, pid: number) => put(path.join(d, "out", "pid"), `${pid}\n`);
+    try {
+      // 1. out/pid names a kit-started sleep that leads its own group: gone-or-not-this-run, an empty
+      // group (pgrep -g is listed only when the pid is gone or is this run), never signalled.
+      const d1 = path.join(f.root, "d1");
+      const sleeper = Bun.spawn(["/usr/bin/perl", "-MPOSIX", "-e", 'POSIX::setsid(); exec "/bin/sleep", "60"'], {
+        env,
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      started.set(sleeper.pid, SLEEP);
+      for (let i = 0; i < 100 && !(command(sleeper.pid) === SLEEP && ps("pgid", sleeper.pid) === String(sleeper.pid)); i++)
+        await Bun.sleep(50);
+      expect(command(sleeper.pid)).toBe(SLEEP);
+      expect(ps("pgid", sleeper.pid)).toBe(String(sleeper.pid));
+      writePid(d1, sleeper.pid);
+      const end1 = step5(d1);
+      expect(end1.startsWith("END dead: pid gone or not this run")).toBe(true);
+      expect(end1).toBe("END dead: pid gone or not this run, no done, no run; group: \n");
+      expect(alive(sleeper.pid)).toBe(true);
+
+      // 2. Presence control: out/pid names `/bin/bash <fake> --run <D> tree` -> END 3h.
+      const d2 = path.join(f.root, "d2");
+      mkdirSync(d2);
+      const run2 = await fakeRun(["/bin/bash", fake, "--run", d2, "tree"], d2);
+      writePid(d2, run2);
+      expect(step5(d2)).toBe(`END 3h: pid ${run2} alive, escalate\n`);
+
+      // 2b. C8-6: <D> = …/d-1 whose out/pid names a live run of …/d-10: the identity's trailing space
+      // keeps it from matching -> END dead with an empty group.
+      const dOne = path.join(f.root, "d-1");
+      const dTen = path.join(f.root, "d-10");
+      mkdirSync(dOne);
+      mkdirSync(dTen);
+      const run10 = await fakeRun(["/bin/bash", fake, "--run", dTen, "tree"], dTen);
+      writePid(dOne, run10);
+      expect(step5(dOne)).toBe("END dead: pid gone or not this run, no done, no run; group: \n");
+
+      // 3. Step 3's D= line (EC8-1): its printed <D>, a run launched on the unresolved /tmp/… path
+      // through the pwd -P launcher, and step 5 with <D> as step 3 printed it -> END 3h at mark 0.
+      const make = makes[0].replace("<lwo-nnn>", "lwo-000");
+      const m = Bun.spawnSync(["/bin/bash", "-c", make], { env, stdout: "pipe", stderr: "pipe", timeout: 20_000 });
+      const d3 = m.stdout.toString().replace(/\n$/, "");
+      const real3 = d3 !== "" && existsSync(d3) ? realpathSync(d3) : "";
+      if (step3Dir.test(real3)) remove.push(real3);
+      expect(m.exitCode).toBe(0);
+      expect(d3).toMatch(/^\/(private\/)?tmp\/hub-rerun-lwo-000-[A-Za-z0-9]{4}$/);
+      expect(real3).toMatch(step3Dir);
+      const raw3 = d3.startsWith("/private/tmp/") ? d3.slice("/private".length) : d3;
+      const run3 = await fakeRun(["/bin/bash", launch, raw3, fake], real3);
+      writePid(real3, run3);
+      expect(step5(d3)).toBe(`END 3h: pid ${run3} alive, escalate\n`);
+    } finally {
+      // Cleanup first, every expect after it. A fake run's sleep forked late is picked up here.
+      for (const r of runs) for (const c of kids(r)) if (!started.has(c)) started.set(c, SLEEP);
+      // TERM once, never -9, and only while the pid still runs the command the row started it as.
+      for (const [pid, cmd] of started) {
+        if (!alive(pid) || command(pid) !== cmd) continue;
+        try {
+          process.kill(pid, "SIGTERM");
+        } catch (e) {
+          if (!(e instanceof Error && "code" in e && (e.code === "ESRCH" || e.code === "EPERM"))) throw e;
+        }
+      }
+      const live = () => [...started.keys()].filter(alive);
+      for (let i = 0; i < 100 && live().length > 0; i++) await Bun.sleep(50);
+      for (const d of remove) if (step3Dir.test(d)) rmSync(d, { recursive: true, force: true });
+      // A pid still alive here is one of the row's, or a pid reused by another process (not signalled).
+      expect(live().map((pid) => `${pid} ${command(pid)}`)).toEqual([]);
+      for (const d of remove) expect(existsSync(d)).toBe(false);
+    }
+  }, 200_000);
 });
