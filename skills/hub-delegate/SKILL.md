@@ -84,6 +84,34 @@ for the vault, your Vault row's `V=` line followed by `echo "$V"`. The rules are
 
        D=<D>; G=<G>; g() { ps -p "$(cat "$D/out/pid")" >/dev/null && ! ps -ww -o command= -p "$(cat "$D/out/pid")" | grep -qF -- "--run $D " || pgrep -g "$(cat "$D/out/pid")"; }; until [ -z "$(g)" ] || [ $(( $(date +%s) - G )) -ge 900 ]; do sleep 30; done; if [ -z "$(g)" ]; then echo "END group-empty"; else echo "END group-alive: $(g | tr '\n' ' ')"; fi
 
+7. `END done`: read `<D>/out/summary.txt`. Lines under `== <suite>` were copied from the harness
+   with `grep -anE`; a summary line `Binary file … matches` or `copy: FAILED …` means the copy failed: no verdict for that suite;
+   `rc=` is the suite's own exit code. Quote them. Count the reds from the ` N fail` line, and read
+   the `(fail)` titles as a set: bun repeats them in an end list on long runs. `rerun-rc:` other
+   than 0, or no `== ` line, means there was no run (a refusal: R2 base, R3 `SHA MISMATCH`, R4
+   `APPLY FAILED`, R5 suites, R6 unstaged or untracked files; or `killed`): say so in the ask or ask the team, never quote a refusal as the run. `END dead`: no run either.
+   The expected set is the `(fail)` lines the team's DONE report quotes whole (take them with `grep -aE '^\((fail|pass)\) ' -- "<DONE path>"`), plus rerun.sh's 4 scrub reds, which are red on every run under its fake HOME and are never re-run: `T4 profile guard > T4 HOME override without the seam gate still guards the passwd home's fleet dir`, `T14 test seams > T14 seams without the OMT_TEST_SANDBOX gate, or with a gate outside temp, are ignored`, `profile-mode removal control > baseline: the unmutated copy of test/omt-profile.test.ts passes (else HARNESS BROKEN)` and `profile-mode removal control > every title named by a mutant exists in its suite (else HARNESS BROKEN)`; compare by this rule: from each `(fail) ` line strip `(fail) ` and a trailing ` [<n>ms]` or ` [<n>s]`, then compare whole strings. If that grep finds no line, ask the team before step 8.
+   For those 4, the team's DONE report must quote their `(pass)` lines whole from its own root run (real HOME, `env -u CLAUDECODE bun test test/`: bun prints no `(pass)` line while CLAUDECODE is set), as its order asks; check each with the line below, which takes only a line starting `(pass) ` (T4's, written out; the other three the same with their `<describe> > <title>`, a `'` written as `'\''` and each of `( ) . [ ] * + ?` written with a `\` before it) and the same strip rule on `(pass) `; without that, ask the team before the push ask.
+
+       grep -nE '^\(pass\) T4 profile guard > T4 HOME override without the seam gate still guards the passwd home'\''s fleet dir( \[|$)' -- "<DONE path>"
+
+   A ` N error` or ` N errors` line (N ≥ 1) under a suite (rerun.sh copies count lines only from bun's own summary block) is a loading failure: a file that threw hid its tests, so that suite has no verdict; never carry it as a red, and say so in the ask; `unhandled=` and `tcache-entries:` are information only.
+   A `bun test` suite whose lines hold other than exactly one `Ran …` line and exactly one ` N fail` line, or an `rc=` other than 0 or 1, has no verdict either (bun killed mid-run, a path that matched no file, a summary block that was not copied, or a second block a test printed, such as a removal control echoing a nested `bun test`); never read its `(fail)` lines as its reds, and say so in the ask (send a nested block's `(fail)` lines to the team); this holds for step 8's re-run too.
+   A `channel tsc` suite prints no `Ran` or count line and is read by its `rc=` and its `error TS` lines, the only lines of its output the summary copies: `rc=0` with no `error TS` line is green; `rc=2` with one or more `error TS` lines is red, each `error TS` line a red; anything else is no verdict, including `rc=2` with no `error TS` line and `rc=0` with an `error TS` line.
+   If it is the channel suite, the first match wins: a `channel warm-up:` line with `rc=` neither 0 nor 1, or with `ran=0`, is the environment, report it to the operator; else a warm-up `errors=` above 0 is a defect, send it to the team; else a ` N error` line in the `--isolate` part: after this run's `END done`, relaunch once as in steps 3–4 (a new dir by step 3's `D=$(cd "$(mktemp -d /tmp/hub-rerun-<lwo-nnn>-XXXX)" && pwd -P)`, its own ledger row and Rerun line) with suites.txt holding only `channel bun test --isolate`, never two rerun.sh runs at once, and quote the root suites from the first run; a clean relaunch: its channel lines are the channel verdict, quote them; a ` N error` line again (any N ≥ 1): send it to the team as a defect with both summaries, and say so in the ask. A ` N error` line under any other suite: send it to the team as a defect.
+   The `channel warm-up:` and `tcache-entries:` lines and `out/warmup.txt` are not counted; the warm-up line's `errors=` and `ran=` are read only by the line above.
+   `harness-new: dirs <names>; servers <pids>` other than `(none)` names what the test harness
+   left behind: a leak by the harness, not a failure of the run; name it in your re-run message.
+   `END dead` with a non-empty `group:` is an orphaned suite: report those pids to the operator,
+   set the Rerun line to `Rerun: <D> pid <N> ended dead group-wait G=<G>.`, run step 6's
+   group-wait line with the same two options as after "abandon", and don't relaunch before
+   `END group-empty`.
+8. A red outside the expected set: re-run each file with such a red through rerun.sh, alone, once, in a fresh dir made by step 3's line (`D=$(cd "$(mktemp -d /tmp/hub-rerun-<lwo-nnn>-XXXX)" && pwd -P)`), with one `bun test test/<file>` line. The same title red again (the expected set still applies): a real red. Green alone (with a verdict by step 7): a flake; log both summaries with ledger.sh, and your verdict says "flake, ruled by the hub". No third run.
+9. The first lines of `<D>/out/log.txt` list the staged files, forbidden paths, never-staged
+   changes and footer lines; read them with `head` or `grep -a`, not the whole log (a test can print
+   binary bytes into it). Copy the summary
+   to `"<vault>/lab/artifacts/<lwo-nnn>-rerun.txt"`.
+
 ## 3. A team document against its reference, and the operator draft: hub-reader
 
 Run `shasum` on the reference and the document, and compare the document's with the sha1 in the
