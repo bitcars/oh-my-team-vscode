@@ -1,6 +1,7 @@
 /**
  * Removal control for the hub-delegate kit (test/hub-delegate.test.ts, #69 item A, plan §4). It
- * follows test/ledger-compact.control.test.ts: each mutant TEXTUALLY patches one script in a copy,
+ * follows test/ledger-compact.control.test.ts: each mutant TEXTUALLY patches one file in a copy
+ * (ledger.sh: ML, rerun.sh: MR, agents/hub-reader.md: MH, SKILL.md: MS; 106 in all),
  * runs that copy's kit with a JUnit report, filtered by -t to the mutant's named titles, and asserts
  * the mustFail titles fail and the mustPass titles pass, so the mutant is caught by the row meant to
  * catch it, not by a crash.
@@ -22,6 +23,9 @@
  * and finish-TERM (a TERM while rerun.sh's finish runs still leaves rc.txt and done).
  * Processes: at most one TERM per spawned pid, never -9; a pid still alive (no exit code, no signal)
  * after it is reported "LIVE" and its root held, never deleted. failureText reads bun's stderr only.
+ * After every MR mutant (C-L4), on every exit path, the control TERMs, by exact pid, what is left
+ * in the group of each run the kit started from this copy (the leader by its command; a member by
+ * its command, or by pgid plus cwd under the run's D), and asserts the group empty.
  * Never delete a mutant to go green. "HARNESS BROKEN" means the control measures nothing.
  */
 
@@ -36,6 +40,8 @@ const REPO = path.resolve(import.meta.dir, "..");
 const KIT = "test/hub-delegate.test.ts";
 const LEDGER = "skills/hub-delegate/ledger.sh";
 const RERUN = "skills/hub-delegate/rerun.sh";
+const HUB_READER = "agents/hub-reader.md";
+const SKILL = "skills/hub-delegate/SKILL.md";
 const FIXTURE = "test/fixtures/hub-delegate/LWO-001-x.md";
 const DESCRIBE = "hub-delegate kit";
 /** The kit's 81 titles, in kit order, read from its test("…") lines (four come from one for-of). */
@@ -53,6 +59,8 @@ const EXPECTED_TITLES: readonly string[] = [
   "HR-front", "HR-probe", "SK-front", "SK-lines", "SK-steps", "SK-briefs", "SK-nolwo", "SK-pid-reuse",
 ];
 const KIT_TITLES = 81;
+/** G1: the number of find entries over all 106 mutants (ML 41, MR and MH 57, MS 22), set at implementation; G1 asserts it. */
+const PATCHES = 120;
 /** spawnSync bounds: a whole or filtered kit run, and every other child (git, bash -n, ledger.sh). */
 const KIT_TIMEOUT_MS = 900_000;
 const PROBE_TIMEOUT_MS = 60_000;
@@ -63,13 +71,18 @@ const ROOT_PREFIX = path.join(TMP, "hub-delegate-control-");
 const GENV = { HOME: "/nonexistent", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", PATH: "/usr/bin:/bin" };
 
 const roots: string[] = [];
-/** Roots under a process that did not exit: never deleted, reported with its pid. */
-const held = new Map<string, number>();
+/** Roots under a process that did not exit: never deleted, reported with every such pid (F5). */
+const held = new Map<string, number[]>();
+const hold = (root: string, pid: number) => {
+  const pids = held.get(root) ?? [];
+  if (!pids.includes(pid)) pids.push(pid);
+  held.set(root, pids);
+};
 /** Remove a root this control made: only an exact path it created, under the literal prefix. */
 function removeRoot(dir: string) {
   if (!roots.includes(dir) || !dir.startsWith(ROOT_PREFIX) || dir.includes("/../")) throw new Error(`HARNESS BROKEN: refusing to remove ${dir}`);
   if (held.has(dir)) {
-    console.log(`LIVE: pid ${held.get(dir)} did not exit; its root ${dir} is left in place`);
+    console.log(`LIVE: pid ${held.get(dir)?.join(" ")} did not exit; its root ${dir} is left in place`);
     return;
   }
   rmSync(dir, { recursive: true, force: true });
@@ -183,8 +196,10 @@ function fillCopy(root: string, edits: { file: string; patches: Patch[] }[]): { 
     if (source === original) throw new Error(`NO-OP: the patches leave ${e.file} unchanged`);
     writeFileSync(target, source);
     expect({ file: e.file, changed: readFileSync(target, "utf8") !== original }).toEqual({ file: e.file, changed: true });
-    const syn = spawnBounded(["/bin/bash", "-n", target], { env: GENV }, PROBE_TIMEOUT_MS);
-    expect({ file: e.file, bashN: syn.exitCode, err: syn.stderr.toString() }).toEqual({ file: e.file, bashN: 0, err: "" });
+    if (e.file.endsWith(".sh")) {
+      const syn = spawnBounded(["/bin/bash", "-n", target], { env: GENV }, PROBE_TIMEOUT_MS);
+      expect({ file: e.file, bashN: syn.exitCode, err: syn.stderr.toString() }).toEqual({ file: e.file, bashN: 0, err: "" });
+    }
   }
   return { root, copy };
 }
@@ -210,11 +225,15 @@ function runKit(copy: string, only?: string[]): KitResult {
     cwd: copy,
     env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "/nonexistent", TMPDIR: "/tmp" },
   }, KIT_TIMEOUT_MS);
-  const stderr = proc.stderr.toString();
-  const output = proc.stdout.toString() + stderr;
-  if (!existsSync(report)) throw new Error(`HARNESS BROKEN: no JUnit report written (exit ${proc.exitCode})\n${output.slice(-3000)}`);
+  return parseKit(report, proc.exitCode ?? -1, proc.stdout.toString(), proc.stderr.toString());
+}
+
+/** The JUnit report and bun's stderr of one kit run, as a KitResult. */
+function parseKit(report: string, exitCode: number, stdout: string, stderr: string): KitResult {
+  const output = stdout + stderr;
+  if (!existsSync(report)) throw new Error(`HARNESS BROKEN: no JUnit report written (exit ${exitCode})\n${output.slice(-3000)}`);
   const xml = readFileSync(report, "utf8");
-  const r: KitResult = { exitCode: proc.exitCode ?? -1, ran: null, passed: [], failed: [], skipped: [], output, stderr };
+  const r: KitResult = { exitCode, ran: null, passed: [], failed: [], skipped: [], output, stderr };
   for (const m of xml.matchAll(/<testcase name="([^"]*)"[^>]*?(?:\/>|>([\s\S]*?)<\/testcase>)/g)) {
     const title = unescapeXml(m[1]);
     const body = m[2] ?? "";
@@ -225,6 +244,193 @@ function runKit(copy: string, only?: string[]): KitResult {
   const ran = stderr.match(/^Ran (\d+) tests? across \d+ files?\./m);
   r.ran = ran ? Number(ran[1]) : null;
   return r;
+}
+
+/** A run the kit started from this copy (C-L4, N-S12-1): its leader pid, its fixture D, its command. */
+interface RunRecord {
+  pid: number;
+  d: string;
+  command: string;
+}
+
+const psCommand = (pid: number) => {
+  const p = spawnBounded(["/bin/ps", "-ww", "-o", "command=", "-p", String(pid)], { env: GENV }, PROBE_TIMEOUT_MS);
+  return p.exitCode === 0 ? p.stdout.toString().trim() : "";
+};
+const psPgid = (pid: number) => {
+  const p = spawnBounded(["/bin/ps", "-o", "pgid=", "-p", String(pid)], { env: GENV }, PROBE_TIMEOUT_MS);
+  return p.exitCode === 0 ? Number(p.stdout.toString().trim()) : -1;
+};
+/** The pid's cwd as lsof prints it (read-only); "" when lsof names none. */
+const lsofCwd = (pid: number) => {
+  const p = spawnBounded(["/usr/sbin/lsof", "-a", "-p", String(pid), "-d", "cwd", "-Fn"], { env: GENV }, PROBE_TIMEOUT_MS);
+  const line = p.stdout.toString().split("\n").find((x) => x.startsWith("n"));
+  return line ? line.slice(1) : "";
+};
+/** `pgrep -g`: rc 1 is an empty group, rc 0 the listed pids, anything else HARNESS BROKEN (F4). */
+const pgrepGroup = (pid: number): number[] => {
+  const p = spawnBounded(["/usr/bin/pgrep", "-g", String(pid)], { env: GENV }, PROBE_TIMEOUT_MS);
+  if (p.exitCode === 1) return [];
+  if (p.exitCode !== 0) throw new Error(`HARNESS BROKEN: pgrep -g ${pid} exited ${p.exitCode}: ${p.stderr.toString().trim()}`);
+  return p.stdout.toString().split("\n").filter((x) => /^[0-9]+$/.test(x)).map(Number);
+};
+
+/**
+ * runKit for an MR mutant (N-S12-1): the same argv, env and bound, run with Bun.spawn so the control
+ * can poll, every 100 ms and read-only, /private/tmp/hub-delegate-kit-*\/*\/out/pid while the kit
+ * runs. A pid is recorded, into the caller's `runs` (filled in place, so the caller reaps them on
+ * every exit path, F1), only when its command line holds this control's copy (`<copy>/`), with the
+ * D whose out/pid named it; a leader that exits before the first poll is not recorded. The kit gets
+ * at most one TERM (on the timeout or a failed watch, F2); after it, 15 s for the kit to exit, else
+ * its pid is held with the root and the run is HARNESS BROKEN (F3).
+ */
+async function runKitWatched(root: string, copy: string, only: string[], runs: RunRecord[]): Promise<KitResult> {
+  const report = path.join(path.dirname(copy), "junit.xml");
+  const args = [process.execPath, "test", `./${KIT}`, "--reporter=junit", `--reporter-outfile=${report}`, "-t", onlyPattern(only)];
+  const proc = Bun.spawn(args, {
+    cwd: copy,
+    env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "/nonexistent", TMPDIR: "/tmp" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const outText = new Response(proc.stdout).text();
+  const errText = new Response(proc.stderr).text();
+  const alive = () => proc.exitCode === null && proc.signalCode === null;
+  let termSent = false;
+  const termOnce = (why: string) => {
+    if (alive() && !termSent) {
+      proc.kill("SIGTERM");
+      termSent = true;
+      console.log(`kit pid ${proc.pid}: TERM (${why})`);
+    }
+  };
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    termOnce("timeout");
+  }, KIT_TIMEOUT_MS);
+  const seen = new Set<string>();
+  const glob = new Bun.Glob("hub-delegate-kit-*/*/out/pid");
+  const scan = () => {
+    let rels: string[];
+    try {
+      rels = [...glob.scanSync({ cwd: TMP, onlyFiles: true })];
+    } catch (e) {
+      // The kit removed a directory under the scan (its afterAll, a run's cleanup): retry at the next poll.
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw e;
+    }
+    for (const rel of rels) {
+      const file = path.join(TMP, rel);
+      let first = "";
+      try {
+        first = readFileSync(file, "utf8").split("\n")[0];
+      } catch (e) {
+        // Removed between the scan and the read: the kit cleaned it. Anything else is not expected.
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw e;
+      }
+      if (!/^[1-9][0-9]*$/.test(first) || seen.has(`${file} ${first}`)) continue;
+      seen.add(`${file} ${first}`);
+      const command = psCommand(Number(first));
+      if (command.includes(`${copy}/`)) runs.push({ pid: Number(first), d: path.dirname(path.dirname(file)), command });
+    }
+  };
+  let failure: unknown = null;
+  try {
+    while (alive() && !timedOut) {
+      scan();
+      await sleep(100);
+    }
+  } catch (e) {
+    failure = e;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (failure !== null || timedOut) {
+    // The watch failed or the kit timed out: its one TERM (none if the timer sent it), then 15 s.
+    termOnce(timedOut ? "timeout" : "watch failed");
+    const exited = await Promise.race([proc.exited.then(() => true), sleep(15_000).then(() => false)]);
+    if (!exited && alive()) {
+      hold(root, proc.pid);
+      throw new Error(`HARNESS BROKEN: the kit (pid ${proc.pid}) is still alive 15 s after its TERM; its root is held`, { cause: failure ?? undefined });
+    }
+    throw failure ?? new Error(`HARNESS BROKEN: the kit timed out after ${KIT_TIMEOUT_MS} ms (SIGTERM sent)`);
+  }
+  await proc.exited;
+  return parseKit(report, proc.exitCode ?? -1, await outText, await errText);
+}
+
+/**
+ * C-L4: for each recorded run, list `pgrep -g <pid>` and TERM each listed pid once, by its exact
+ * number, never -9. Just before each TERM the pid must still be ours. The leader (the recorded pid):
+ * its command holds the copy (`<copy>/`) (02:03Z, F6). A member (N-S12-1 as amended): its command
+ * holds `<copy>/` or the run's fixture D (`<D>/`), or its pgid equals the leader's pid AND its cwd
+ * lies under `<D>/` (the suites run in `<D>/w`, rerun.sh :567, with a relative command such as
+ * `bun test test/wait.test.ts`). The cwd is compared as a string, never stat'ed: the kit's afterAll
+ * may remove D before the member exits. A pid ps no longer shows is logged `gone [q]`; any other is
+ * logged `skipped: command changed [q "cmd" cwd "…"]` (R3); neither is signalled. Then up to 5 s for
+ * the group to empty. A pid still alive is held with the root. R4: a probe that fails for one run
+ * holds that run's leader and every pid listed so far and the reap goes on; after the loop the first
+ * failure is thrown, with the caller's original error (`original`) as its cause.
+ */
+async function reapGroups(id: string, root: string, copy: string, runs: RunRecord[], original?: unknown): Promise<{ id: string; left: string[] }> {
+  const left: string[] = [];
+  let first: Error | null = null;
+  for (const run of runs) {
+    let listed: number[] = [];
+    try {
+      listed = pgrepGroup(run.pid);
+      const termed: string[] = [];
+      const skipped: string[] = [];
+      const gone: number[] = [];
+      for (const q of listed) {
+        const command = psCommand(q);
+        let how = "";
+        let cwd = "";
+        if (command === "") {
+          gone.push(q);
+          continue;
+        }
+        if (q === run.pid) {
+          if (command.includes(`${copy}/`)) how = "command";
+        } else if (command.includes(`${copy}/`) || command.includes(`${run.d}/`)) how = "command";
+        else if (psPgid(q) === run.pid) {
+          cwd = lsofCwd(q);
+          if (cwd.startsWith(`${run.d}/`)) how = `pgid+cwd ${cwd}`;
+        }
+        if (!how) {
+          // R3: what the pid was, so the skip can be checked.
+          skipped.push(`${q} ${JSON.stringify(command)} cwd ${JSON.stringify(cwd || lsofCwd(q))}`);
+          continue;
+        }
+        try {
+          process.kill(q, "SIGTERM");
+          termed.push(`${q} (${how})`);
+        } catch {
+          // gone since pgrep listed it
+        }
+      }
+      for (let i = 0; i < 50 && pgrepGroup(run.pid).length > 0; i++) await sleep(100);
+      const after = pgrepGroup(run.pid);
+      console.log(`C-L4 ${id}: run ${run.pid} d ${run.d} command ${JSON.stringify(run.command)}; group listed [${listed.join(" ")}] TERM [${termed.join(" ")}]${gone.length ? ` gone [${gone.join(" ")}]` : ""}${skipped.length ? ` skipped: command changed [${skipped.join("; ")}]` : ""}; after [${after.join(" ")}]`);
+      for (const q of after) {
+        hold(root, q);
+        left.push(`${run.pid}:${q}`);
+      }
+    } catch (e) {
+      // R4: a probe failed. Hold the run's leader and every pid listed so far (the root stays), then go on.
+      const pids = [run.pid, ...listed.filter((q) => q !== run.pid)];
+      for (const q of pids) {
+        hold(root, q);
+        left.push(`${run.pid}:${q}`);
+      }
+      console.log(`C-L4 ${id}: run ${run.pid} d ${run.d}: reap failed (${e instanceof Error ? e.message : String(e)}); held [${pids.join(" ")}]`);
+      first ??= e instanceof Error ? e : new Error(String(e));
+    }
+  }
+  if (first) throw original === undefined ? first : new Error(first.message, { cause: original });
+  return { id, left };
 }
 
 /**
@@ -320,7 +526,7 @@ async function finishTerm(root: string, copy: string): Promise<{ inSleep: boolea
       termSent = true;
       await Promise.race([proc.exited, sleep(15_000)]);
     }
-    if (proc.exitCode === null && proc.signalCode === null) held.set(root, proc.pid);
+    if (proc.exitCode === null && proc.signalCode === null) hold(root, proc.pid);
   }
 }
 
@@ -328,18 +534,29 @@ const FINISH_SLEEP: Patch = ['    } >> out/summary.txt\n    echo "$RESULT" > out
 
 // ── the ML mutants (plan §4: ML1-ML29, 31 mutants) ───────────────────────────
 
-type Assertion = "restore-holds" | "restore-fails" | "cas-holds" | "cas-fails";
+type Assertion = "restore-holds" | "restore-fails" | "cas-holds" | "cas-fails" | "finish-fails";
 
 interface Mutant {
   id: string;
   what: string;
   patches: Patch[];
+  /** The file the patches edit; ledger.sh when absent (the ML rows). */
+  file?: string;
+  /** MR36 only: run only where /opt/homebrew/bin exists, else print "MR36 N/A …" (C5-8). */
+  gate?: "homebrew";
   mustFail: string[];
   mustPass: string[];
   /** A mustFail title's failure text (stderr) must match this (corp-mode.control's mustFailWith). */
   mustFailWith?: Record<string, RegExp>;
-  /** A control-side assertion on the copy's ledger.sh, and the verb it runs. */
-  assertion?: { kind: Assertion; verb: "log" | "now" };
+  /** A control-side assertion: on the copy's ledger.sh (with the verb it runs), or MR27's finish-TERM. */
+  assertion?: { kind: Assertion; verb?: "log" | "now" };
+  /**
+   * N-S12-6: an equivalent mutant (the script behaves the same with it). Its mustFail titles must
+   * still PASS; it is reported as STILL GREEN (equivalent, by <file:line>) and counted apart.
+   */
+  equivalent?: true;
+  /** Why the row is equivalent; its first word is the file:line that makes it so. */
+  reason?: string;
 }
 
 const DOUBLE_ROW: Patch = [`printf '%s' "$SUFFIX"; tail -c`, `printf '%s' "$SUFFIX"; printf '%s' "$SUFFIX"; tail -c`];
@@ -530,6 +747,138 @@ const MUTANTS: Mutant[] = [
   },
 ];
 
+// ── the MR mutants on rerun.sh (MR1-MR51), MH on agents/hub-reader.md (MH1-MH3) ──────────
+// Literal finds, written at implementation from the rows' text (plan §4, code L860-L934).
+
+const MR_MH: Mutant[] = [
+  { id: "MR1", what: "sha1 compare always equal", patches: [["[ \"$got\" = \"$SHA\" ] ||", "true ||"]], mustFail: ["RR-sha"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR2", what: "R2 HEAD check removed", patches: [["  [ \"$head\" = \"$BASE\" ] || refuse_run 2 \"R2: HEAD $(esc \"${head:-(none)}\") is not $BASE\"\n", ""]], mustFail: ["RR-head"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR3", what: "remote removal loop removed", patches: [["  while IFS= read -r r; do\n    tw \"$D/tmp/remove\" remote remove \"$r\" || refuse_run 5 \"APPLY FAILED: remote remove $(esc \"$r\")\"\n  done < \"$D/tmp/remotes\"\n", ""]], mustFail: ["RR-remotes", "RR-ok"], mustPass: ["RR-env"], file: RERUN }, // N-S12-4: plan mustPass RR-ok
+  { id: "MR4", what: "env -i removed (the bun test suite line)", patches: [["(cd \"$D/w\" && env -i ", "(cd \"$D/w\" && env "]], mustFail: ["RR-env"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR5", what: "on the env line, PATH=\"$P\" -> PATH=\"${P#*:}\"", patches: [["(cd \"$D/w\" && env -i HOME=\"$D/home\" USER=\"$USER\" LOGNAME=\"${LOGNAME:-$USER}\" LANG=\"${LANG:-en_US.UTF-8}\" TERM=dumb TMPDIR=\"$D/tmp\" TMUX_TMPDIR=\"$D/tmux\" OMT_HOME=\"$D/NO_HUB\" PATH=\"$P\"", "(cd \"$D/w\" && env -i HOME=\"$D/home\" USER=\"$USER\" LOGNAME=\"${LOGNAME:-$USER}\" LANG=\"${LANG:-en_US.UTF-8}\" TERM=dumb TMPDIR=\"$D/tmp\" TMUX_TMPDIR=\"$D/tmux\" OMT_HOME=\"$D/NO_HUB\" PATH=\"${P#*:}\""]], mustFail: ["RR-shims"], mustPass: ["RR-ok", "RR-shim-eq"], file: RERUN },
+  { id: "MR6", what: "allowlist accepts any line", patches: [["    refuse_run 2 \"R5: bad line $n\"\n", "    SUITE_LINES+=(\"$line\")\n"]], mustFail: ["RR-suites"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR7", what: ".. refusal removed", patches: [[" && [[ \"$line\" != *..* ]]", ""]], mustFail: ["RR-suites"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR8", what: "part 1's merge line -> tail -n 20 of log.txt, parts 2 and 3 kept", patches: [["    [ ! -e \"$D/out/log.txt\" ] || { { grep -anE \"$X\" \"$D/out/log.txt\"; r=$?; [ \"$r\" -lt 2 ] || echo \"0:copy: FAILED grep rc=$r\"; blk \"$D/out/log.txt\" | grep -aE '^0:copy: |^[0-9]+: *[0-9]+ (pass|fail|skip|todo|errors?)$'; } | LC_ALL=C sort -t: -k1,1n -s | LC_ALL=C cut -d: -f2- >> \"$D/out/summary.txt\"; p=(\"${PIPESTATUS[@]}\"); [ \"${p[1]}\" = 0 ] || echo \"copy: FAILED sort rc=${p[1]}\" >> \"$D/out/summary.txt\"; [ \"${p[2]}\" = 0 ] || echo \"copy: FAILED cut rc=${p[2]}\" >> \"$D/out/summary.txt\"; }\n", "    [ ! -e \"$D/out/log.txt\" ] || tail -n 20 \"$D/out/log.txt\" >> \"$D/out/summary.txt\"\n"]], mustFail: ["RR-ok", "RR-sha"], mustPass: ["RR-env"], file: RERUN }, // N-S12-4: plan mustPass RR-sha
+  { id: "MR9", what: "done written before rc", patches: [["    echo \"$RESULT\" > out/rc.txt\n    date -u > out/done\n", "    date -u > out/done\n    echo \"$RESULT\" > out/rc.txt\n"]], mustFail: ["RR-ok"], mustPass: ["RR-sha"], file: RERUN },
+  { id: "MR10", what: "apply failure not fatal", patches: [["apply --index ../staged.patch || refuse_run 5 'APPLY FAILED'", "apply --index ../staged.patch || true"]], mustFail: ["RR-apply"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR11", what: "forbidden-paths grep removed", patches: [["      [[ \"$p\" =~ ^(\\.claude/|CLAUDE\\.local\\.md|\\.mcp\\.json|\\.sisyphus/) ]] && lst \"$p\"\n", "      :\n"]], mustFail: ["RR-forbidden"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR12", what: "one byte changed in the copied span (exit 99 -> exit 98 in the omt/claude/gh shims)", patches: [["\\nexit 99\\n' \"$c\"", "\\nexit 98\\n' \"$c\""]], mustFail: ["RR-shim-eq"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR13", what: "zero-suite refusal removed", patches: [["  [ \"${#SUITE_LINES[@]}\" -ge 1 ] || refuse_run 2 'R5: no suite'\n", ""]], mustFail: ["RR-absent"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR14", what: "/private/tmp check removed", patches: [["case \"$D\" in /private/tmp/?*) ;; *) echo \"rerun.sh: $D is not under /tmp\" >&2; exit 2 ;; esac\n", ""]], mustFail: ["RR-d"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR15", what: "setsid/nohup detach removed (plain &)", patches: [["nohup /usr/bin/perl -MPOSIX -e 'POSIX::setsid()>=0 or die \"setsid\\n\"; exec @ARGV' \\\n  /bin/bash", "/bin/bash"]], mustFail: ["RR-detach"], mustPass: ["RR-sha"], file: RERUN },
+  { id: "MR16", what: "TERM trap removed", patches: [["  trap 'RESULT=killed; PART2=\"\"; exit' TERM INT HUP\n", ""]], mustFail: ["RR-killed"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR17", what: "EXIT trap's done removed", patches: [["    date -u > out/done\n", ""]], mustFail: ["RR-ok", "RR-sha"], mustPass: ["RR-mode"], file: RERUN },
+  { id: "MR18", what: "group reaping removed from finish", patches: [["    local p pids live i\n    pids=$(pgrep -g $$ | grep -vx -- \"$$\")\n    for p in $pids; do kill -TERM \"$p\" 2>/dev/null; done\n    for ((i = 0; i < 100; i++)); do\n      live=''\n      for p in $pids; do kill -0 \"$p\" 2>/dev/null && live+=\"$p \"; done\n      [ -z \"$live\" ] && break\n      sleep 0.1\n    done\n    for p in $pids; do kill -0 \"$p\" 2>/dev/null && kill -KILL \"$p\" 2>/dev/null; done\n", ""]], mustFail: ["RR-killed", "RR-detach"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR19", what: "empty-patch skip removed", patches: [["  if [ ! -s \"$D/staged.patch\" ]; then\n    echo 'staged: (empty)' >> \"$D/out/log.txt\"\n  else\n    tw \"$D/tmp/apply\" apply --index ../staged.patch || refuse_run 5 'APPLY FAILED'\n  fi\n", "  tw \"$D/tmp/apply\" apply --index ../staged.patch || refuse_run 5 'APPLY FAILED'\n"]], mustFail: ["RR-empty"], mustPass: ["RR-one-line"], file: RERUN },
+  { id: "MR20", what: "R6 removed", patches: [["  [ -z \"$bad\" ] || refuse_run 6 \"${bad%$'\\n'}\"\n", ""]], mustFail: ["RR-unstaged", "RR-untracked"], mustPass: ["RR-neverstaged"], file: RERUN },
+  { id: "MR21", what: "never-staged exclusion removed (untracked and tracked)", patches: [["    if never_staged \"$p\"; then\n", "    if false; then\n"], ["    never_staged \"$p\" || bad+=", "    false || bad+="]], mustFail: ["RR-neverstaged", "RR-unstaged"], mustPass: ["RR-env"], file: RERUN }, // N-S12-4: plan mustPass RR-unstaged
+  { id: "MR22", what: "2>&1 removed from the suite line", patches: [["\"${cmd[@]}\" >>\"$D/out/log.txt\" 2>&1 </dev/null)", "\"${cmd[@]}\" >>\"$D/out/log.txt\" </dev/null)"]], mustFail: ["RR-ok"], mustPass: ["RR-sha"], file: RERUN },
+  { id: "MR23", what: "mkdir ... tmp removed (the suites' TMPDIR)", patches: [["mkdir \"$S\" tmux home tmp tcache", "mkdir \"$S\" tmux home tcache"]], mustFail: ["RR-env", "RR-sha"], mustPass: ["RR-remotes"], file: RERUN }, // N-S12-4: plan mustPass RR-sha
+  { id: "MR24", what: "clean of out/ removed (and out made with -p)", patches: [["rm -rf out w staged.patch", "rm -rf w staged.patch"], ["mkdir out || exit 2", "mkdir -p out || exit 2"]], mustFail: ["RR-head"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR25", what: "the suite line back to the foreground form", patches: [["\"${cmd[@]}\" >>\"$D/out/log.txt\" 2>&1 </dev/null) & cpid=$!\n        wait \"$cpid\"; printf", "\"${cmd[@]}\" >>\"$D/out/log.txt\" 2>&1 </dev/null)\n        printf"]], mustFail: ["RR-killed"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR26", what: "the live-run guard removed", patches: [["if [ -f \"$D/out/pid\" ]; then\n  old=$(head -n 1 \"$D/out/pid\" | head -c 32 | tr -d '\\n')\n  if [[ \"$old\" =~ ^[1-9][0-9]*$ ]] && kill -0 \"$old\" 2>/dev/null; then\n    echo \"rerun.sh: run alive: $old\"\n    exit 2\n  fi\nfi\n", ""]], mustFail: ["RR-busy"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR27", what: "trap '' TERM INT HUP removed from finish", patches: [["    trap '' TERM INT HUP\n", ""]], mustFail: [], mustPass: ["RR-ok"], file: RERUN, assertion: { kind: "finish-fails" } },
+  { id: "MR28", what: "the harness-new sets always (none)", patches: [["    [ -n \"$x\" ] && printf '%s' \"$x\" || printf '(none)'", "    printf '(none)'"]], mustFail: ["RR-sandboxes"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR29", what: "the self resolution dropped (the detach execs \"$0\")", patches: [["/bin/bash \"$self\" --run", "/bin/bash \"$0\" --run"]], mustFail: ["RR-relpath"], mustPass: ["RR-sha"], file: RERUN },
+  { id: "MR30", what: "the guard's kill -0 dropped (any numeric out/pid refuses)", patches: [[" && kill -0 \"$old\" 2>/dev/null; then", "; then"]], mustFail: ["RR-busy"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR31", what: "R1's CLAUDE.md walk removed", patches: [["p=$D\nwhile :; do\n  for f in CLAUDE.md CLAUDE.local.md .claude/CLAUDE.md; do\n    [ -e \"$p/$f\" ] && { echo \"rerun.sh: refusing to launch, $p/$f exists\" >&2; exit 3; }\n  done\n  [ -z \"$p\" ] && break\n  p=${p%/*}\ndone\n", ""]], mustFail: ["RR-d-above"], mustPass: ["RR-d"], file: RERUN },
+  { id: "MR32", what: "the footer grep removed", patches: [["    awk '/^diff / { h = 0 } /^@@ / { h = 1; next } h && /^\\+/' \"$D/staged.patch\" | grep -aiE -- \"$footer\" \\\n      | while IFS= read -r l; do lst \"$l\"; done\n", ""]], mustFail: ["RR-footer"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR33", what: "R0's sha form check removed", patches: [["if [ \"$#\" -ne 5 ] || ! [[ \"$3\" =~ ^[0-9a-f]{40}$ ]] || ! [[ \"$4\" =~ ^[0-9a-f]{40}$ ]]; then", "if [ \"$#\" -ne 5 ]; then"]], mustFail: ["RR-sha"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR34", what: "part 1's merge grep -anE -> grep -nE", patches: [["grep -anE \"$X\"", "grep -nE \"$X\""]], mustFail: ["RR-binary-log"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR35", what: "|^unhandled=[0-9]+$ dropped from part 1's pattern", patches: [["|^unhandled=[0-9]+$", ""]], mustFail: ["RR-unhandled", "RR-ok"], mustPass: ["RR-env"], file: RERUN }, // N-S12-4: plan mustPass RR-ok
+  { id: "MR36", what: "the path-order step's P= line removed, its echo kept", patches: [["  if [ -d /opt/homebrew/bin ]; then P=\"$D/$S:/opt/homebrew/bin:${P#\"$D/$S:\"}\"; fi\n", ""]], mustFail: ["RR-env"], mustPass: ["RR-ok"], file: RERUN, gate: "homebrew" },
+  { id: "MR37", what: "the warm-up block removed", patches: [["        echo \"channel warm-up: start\" >> \"$D/out/log.txt\"; t0=$(date +%s)\n        (cd \"$D/w/channel\" && env -i HOME=\"$D/home\" USER=\"$USER\" LOGNAME=\"${LOGNAME:-$USER}\" LANG=\"${LANG:-en_US.UTF-8}\" TERM=dumb TMPDIR=\"$D/tmp\" TMUX_TMPDIR=\"$D/tmux\" OMT_HOME=\"$D/NO_HUB\" PATH=\"$P\" CLAUDE_BIN=\"$CB\" BUN_INSTALL_CACHE_DIR=\"$D/bun-cache\" BUN_RUNTIME_TRANSPILER_CACHE_PATH=\"$D/tcache\" bun test >\"$D/out/warmup.txt\" 2>&1 </dev/null) & cpid=$!\n        wait \"$cpid\"; wrc=$?; echo \"channel warm-up: rc=$wrc s=$(( $(date +%s) - t0 )) errors=$(blk \"$D/out/warmup.txt\" | sed -nE 's/^[0-9]+: *([0-9]+) errors?$/\\1/p' | awk '{s += $1} END {print s + 0}') ran=$(grep -aE '^Ran [0-9]+ tests? across' \"$D/out/warmup.txt\" | awk '{n = $2} END {print n + 0}')\" >> \"$D/out/log.txt\"\n", ""]], mustFail: ["RR-warmup", "RR-ok"], mustPass: ["RR-env"], file: RERUN }, // N-S12-4: plan mustPass RR-ok
+  { id: "MR38", what: "BUN_RUNTIME_TRANSPILER_CACHE_PATH dropped from the --isolate step", patches: [[" BUN_RUNTIME_TRANSPILER_CACHE_PATH=\"$D/tcache\" bun test --isolate", " bun test --isolate"]], mustFail: ["RR-warmup"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR39", what: "the warm-up in the foreground", patches: [[">\"$D/out/warmup.txt\" 2>&1 </dev/null) & cpid=$!\n        wait \"$cpid\"; wrc=$?", ">\"$D/out/warmup.txt\" 2>&1 </dev/null)\n        wrc=$?"]], mustFail: ["RR-killed"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR40", what: "the self line back to v4's form", patches: [["self=$(CDPATH='' cd -- \"$(dirname -- \"$0\")\" && pwd -P)/$(basename -- \"$0\")", "self=$(cd \"$(dirname \"$0\")\" && pwd -P)/$(basename \"$0\")"]], mustFail: ["RR-relpath"], mustPass: ["RR-sha"], file: RERUN },
+  { id: "MR41", what: "the unhandled= awk -> a plain grep -c of the suite's lines", patches: [["    awk -v h=\"== $line\" '$0 == h {on = 1; n = 0; next} on && p && /^-{31}$/ {n++} {p = ($0 == \"# Unhandled error between tests\")} END {print \"unhandled=\" n+0}' \"$D/out/log.txt\" >> \"$D/out/log.txt\"\n", "    echo \"unhandled=$(awk -v h=\"== $line\" '$0 == h {on = 1; next} on' \"$D/out/log.txt\" | grep -c '^# Unhandled error between tests$')\" >> \"$D/out/log.txt\"\n"]], mustFail: ["RR-unhandled"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR42", what: "one /usr/bin/git -C w outside the span -> git -C w (tw)", patches: [["/usr/bin/git -C w \"$@\"", "git -C w \"$@\""]], mustFail: ["RR-git-abs"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR43", what: "the warm-up's >\"$D/out/warmup.txt\" -> >>\"$D/out/log.txt\"", patches: [["bun test >\"$D/out/warmup.txt\" 2>&1", "bun test >>\"$D/out/log.txt\" 2>&1"]], mustFail: ["RR-ok", "RR-warmup"], mustPass: ["RR-sha"], file: RERUN },
+  { id: "MR44", what: "|errors? dropped from blk's pattern", patches: [["todo|errors?|expect", "todo|expect"]], mustFail: ["RR-unhandled"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR45", what: "the awk's /^-{31}$/ -> /^-+$/", patches: [["/^-{31}$/", "/^-+$/"]], mustFail: ["RR-unhandled"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR46", what: "blk's empty-line rule dropped: s = (n == e + 1) -> s = 1", patches: [["s = (n == e + 1)", "s = 1"]], mustFail: ["RR-unhandled"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR47", what: "the warm-up's errors=$(...) -> errors=0", patches: [["errors=$(blk \"$D/out/warmup.txt\" | sed -nE 's/^[0-9]+: *([0-9]+) errors?$/\\1/p' | awk '{s += $1} END {print s + 0}')", "errors=0"]], mustFail: ["RR-warmup"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR48", what: "blk's snapshot alternatives removed", patches: [["|^snapshots: |^ *[0-9]+ snapshots, [0-9]+ expect\\(\\) calls$", ""]], mustFail: ["RR-unhandled"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR49", what: "blk's grep -anE -> grep -nE", patches: [["blk() { grep -anE", "blk() { grep -nE"]], mustFail: ["RR-binary-log"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR50", what: "the merge's LC_ALL=C sort -> sort", patches: [["| LC_ALL=C sort -t:", "| sort -t:"]], mustFail: ["RR-binary-log"], mustPass: ["RR-ok"], file: RERUN, equivalent: true, reason: "rerun.sh:12 exports LC_ALL=C for the whole script" }, // N-S12-6
+  { id: "MR51", what: "both copy: FAILED grep echoes removed (the merge's and blk's)", patches: [["r=$?; [ \"$r\" -lt 2 ] || echo \"0:copy: FAILED grep rc=$r\"; blk", "r=$?; blk"], ["r=${PIPESTATUS[0]}; [ \"$r\" -lt 2 ] || echo \"0:copy: FAILED grep rc=$r\"; }", "r=${PIPESTATUS[0]}; }"]], mustFail: ["RR-binary-log"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MH1", what: "tools widened with Bash", patches: [["tools: [Read, Grep, Glob]\n", "tools: [Read, Grep, Glob, Bash]\n"]], mustFail: ["HR-front", "HR-probe"], mustPass: ["SK-front"], file: HUB_READER },
+  { id: "MH2", what: "tools line removed", patches: [["tools: [Read, Grep, Glob]\n", ""]], mustFail: ["HR-front", "HR-probe"], mustPass: ["SK-front"], file: HUB_READER },
+  { id: "MH3", what: "a second tools line with WebFetch", patches: [["tools: [Read, Grep, Glob]\n", "tools: [Read, Grep, Glob]\ntools: [Read, Grep, Glob, WebFetch]\n"]], mustFail: ["HR-front"], mustPass: ["SK-front"], file: HUB_READER },
+];
+
+// ── the MS mutants on SKILL.md (MS1-MS21) ─────────────────────────────────────
+// N-S12-3: a row that removes a whole line takes it from SKILL.md by a short anchor written here (the
+// line starting with the trimmed anchor; MS2: the line holding it), asserted to be exactly one line;
+// the find is that line and its newline. The lines are the kit's own pinned literals; the anchor
+// assert catches drift. MS15, MS19 and MS21 are literal.
+
+/** What each derived find removed, for the log: its length and first 60 characters. */
+const DERIVED: Record<string, string> = {};
+/** Anchors that did not resolve to exactly one line (F7): the every-title test reports them HARNESS BROKEN. */
+const MISSES: { id: string; n: number }[] = [];
+
+function dropLine(id: string, rule: "starts" | "holds", anchor: string): Patch {
+  const a = anchor.trim();
+  const hits = readFileSync(path.join(REPO, SKILL), "utf8").split("\n").filter((x) => (rule === "holds" ? x.includes(a) : x.trim().startsWith(a)));
+  if (hits.length !== 1) {
+    DERIVED[id] = `HARNESS BROKEN: anchor ${JSON.stringify(a)} resolves to ${hits.length} lines`;
+    MISSES.push({ id, n: hits.length });
+    // The find matches nothing: G1 counts it bad, and the every-title test fails HARNESS BROKEN.
+    return [`\u0000${DERIVED[id]}`, ""];
+  }
+  DERIVED[id] = `${hits[0].length} chars: ${JSON.stringify(hits[0].slice(0, 60))}`;
+  return [`${hits[0]}\n`, ""];
+}
+
+const msDrop = (id: string, rule: "starts" | "holds", anchor: string, what: string, mustFail: string[], mustPass: string[]): Mutant =>
+  ({ id, what, patches: [dropLine(id, rule, anchor)], mustFail, mustPass, file: SKILL });
+
+const MS: Mutant[] = [
+  msDrop("MS1", "starts", "6. `END 3h`: escalate the stuck gate", "SKILL §2 step 6 line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS2", "holds", "never quote a refusal as the run", "SKILL §2 step 7's refusal line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS3", "starts", "8. A red outside the expected set:", "SKILL §2 step 8 line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS4", "starts", "Every message, ruling and tap;", "SKILL §4's first line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS5", "starts", "The expected set is the `(fail)` lines the team's DONE report quotes whole", "SKILL §2 step 7's expected-set line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS6", "starts", "with `grep -anE`; a summary line", "SKILL §2 step 7's grep -aE/Binary file line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS7", "starts", "A ` N error` or ` N errors` line (N ≥ 1) under a suite", "SKILL §2 step 7's no-verdict ( N error) line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS8", "starts", "`harness-new: dirs <names>; servers <pids>`", "SKILL §2 step 7's harness-new: line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS9", "starts", "`END dead` with a non-empty `group:`", "SKILL §2 step 7's END dead … group: line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS10", "starts", "For those 4, the team's DONE report must quote", "SKILL §2 step 7's real-HOME line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS11", "starts", "If it is the channel suite, the first match wins:", "SKILL §2 step 7's channel environment line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS12", "starts", "The `channel warm-up:` and `tcache-entries:` lines", "SKILL §2 step 7's not-counted line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS13", "starts", "Write the current mark into the Rerun line", "SKILL §2 step 5's re-arm-from-the-Rerun-line line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS14", "starts", "`END stuck-after-term`:", "SKILL §2 step 6's END stuck-after-term line removed", ["SK-steps"], ["SK-lines"]),
+  {
+    id: "MS15", what: "SKILL §2 step 4's Rerun: <D> pid <N> mark 10800. line removed", file: SKILL,
+    patches: [["       Rerun: <D> pid <N> mark 10800.\n", ""]],
+    mustFail: ["SK-lines"], mustPass: ["SK-steps"],
+  },
+  msDrop("MS16", "starts", "On every `END` line, before you act on it", "SKILL §2 step 5's replace-on-every-END line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS17", "starts", "After \"abandon the run\":", "SKILL §2 step 6's after-abandon line removed", ["SK-steps"], ["SK-lines"]),
+  msDrop("MS18", "starts", "A `bun test` suite whose lines hold", "SKILL §2 step 7's crash and no-count line removed", ["SK-steps"], ["SK-lines"]),
+  {
+    id: "MS19", what: "in SKILL §2 step 5's Monitor line, both ! a -> ! kill -0 of out/pid", file: SKILL,
+    patches: [
+      ['|| ! a || [ $(( $(date +%s) - $(stat -f %m "$D/out/pid") )) -ge 10800 ]', '|| ! kill -0 "$(cat "$D/out/pid")" 2>/dev/null || [ $(( $(date +%s) - $(stat -f %m "$D/out/pid") )) -ge 10800 ]'],
+      [
+        `elif ! a; then echo "END dead: pid gone or not this run, no done, no run; group: $(ps -p "$(cat "$D/out/pid")" >/dev/null || pgrep -g "$(cat "$D/out/pid")" | tr '\\n' ' ')"; else echo "END 3h`,
+        `elif ! kill -0 "$(cat "$D/out/pid")" 2>/dev/null; then echo "END dead: pid gone or not this run, no done, no run; group: $(ps -p "$(cat "$D/out/pid")" >/dev/null || pgrep -g "$(cat "$D/out/pid")" | tr '\\n' ' ')"; else echo "END 3h`,
+      ],
+    ],
+    mustFail: ["SK-pid-reuse", "SK-lines"], mustPass: ["SK-steps"],
+  },
+  msDrop("MS20", "starts", "A `channel tsc` suite prints no", "SKILL §2 step 7's tsc line removed", ["SK-steps"], ["SK-lines"]),
+  {
+    id: "MS21", what: "SKILL §2 step 3's D= line without pwd -P", file: SKILL,
+    patches: [['       D=$(cd "$(mktemp -d /tmp/hub-rerun-<lwo-nnn>-XXXX)" && pwd -P); echo "$D"\n', '       D=$(mktemp -d /tmp/hub-rerun-<lwo-nnn>-XXXX); echo "$D"\n']],
+    mustFail: ["SK-pid-reuse", "SK-lines"], mustPass: ["SK-steps"],
+  },
+];
+
+/** All 106 mutants: ML 31, MR 51, MH 3, MS 21. */
+const ALL: Mutant[] = [...MUTANTS, ...MR_MH, ...MS];
+
 function assertionHolds(kind: Assertion, p: Probe): boolean {
   return kind.startsWith("restore") ? restoreHolds(p) : casHolds(p);
 }
@@ -544,12 +893,30 @@ async function withCopy<T>(edits: { file: string; patches: Patch[] }[], fn: (roo
   }
 }
 
+/** The kit titles no mutant fails, by design (plan §4, C3-9): 19. */
+const BY_DESIGN: readonly string[] = [
+  "LD-path-ok", "LD-now-mb-1000", "LD-log-nonl", "RR-one-line",
+  "LD-mode", "RR-mode", "SK-front", "SK-briefs", "SK-nolwo", "LD-grep",
+  "LD-now-16-nonl", "LD-now-empty-state", "LD-now-nodot-state", "LD-now-missing",
+  "LD-shape", "RR-nm-source", "RR-crash", "RR-tsc",
+  "LD-serial",
+];
+
+const FINISH_HOLDS = { inSleep: true, termSent: true, exited: true, rcTxt: "2\n", done: true, summaryRc: "rerun-rc: 2" };
+const FINISH_MR27 = { inSleep: true, termSent: true, exited: true, rcTxt: null, done: false, summaryRc: "rerun-rc: 2" };
+
 describe("hub-delegate removal control", () => {
   let baseline: KitResult | null = null;
+  // N-S12-6: STILL GREEN lines, unexpected ones and equivalent rows counted apart.
+  let greenUnexpected = 0;
+  let greenEquivalent = 0;
+  afterAll(() => console.log(`STILL GREEN ${greenUnexpected} (unexpected), ${greenEquivalent} equivalent`));
 
   test("baseline: the unpatched kit passes exactly the kit's 81 titles, no skips, no repeated title (else HARNESS BROKEN)", async () => {
     expect({ listed: EXPECTED_TITLES.length, unique: new Set(EXPECTED_TITLES).size }).toEqual({ listed: KIT_TITLES, unique: KIT_TITLES });
+    const t0 = performance.now();
     baseline = await withCopy([], (_root, copy) => runKit(copy));
+    console.log(`baseline whole-kit run: ${((performance.now() - t0) / 1000).toFixed(1)} s (copy included)`);
     if (baseline.exitCode !== 0) console.log(`--- baseline output\n${baseline.output.slice(-6000)}`);
     expect({ exit: baseline.exitCode, failed: baseline.failed, skipped: baseline.skipped }).toEqual({ exit: 0, failed: [], skipped: [] });
     const all = [...baseline.passed, ...baseline.failed, ...baseline.skipped];
@@ -557,42 +924,111 @@ describe("hub-delegate removal control", () => {
     expect({ passed: [...baseline.passed].sort(), ran: baseline.ran }).toEqual({ passed: [...EXPECTED_TITLES].sort(), ran: KIT_TITLES });
   });
 
-  test("every title named by a mutant exists in the kit, and mutant ids are unique (else HARNESS BROKEN)", () => {
+  test("every title named by a mutant exists in the kit, mutant ids are unique, and the 19 by-design titles are the ones no mutant fails (else HARNESS BROKEN)", () => {
     expect(baseline).not.toBeNull();
     const ids = new Set<string>();
-    for (const m of MUTANTS) {
+    for (const m of ALL) {
       expect({ id: m.id, unique: !ids.has(m.id) }).toEqual({ id: m.id, unique: true });
       ids.add(m.id);
       for (const t of [...m.mustFail, ...m.mustPass]) expect({ mutant: m.id, title: t, known: baseline!.passed.includes(t) }).toEqual({ mutant: m.id, title: t, known: true });
       for (const t of Object.keys(m.mustFailWith ?? {})) expect({ mutant: m.id, title: t, inMustFail: m.mustFail.includes(t) }).toEqual({ mutant: m.id, title: t, inMustFail: true });
       expect({ mutant: m.id, catches: m.mustFail.length > 0 || m.assertion?.kind.endsWith("-fails") === true }).toEqual({ mutant: m.id, catches: true });
+      if (m.equivalent) expect({ mutant: m.id, reason: /^\S+:[0-9]+ /.test(m.reason ?? "") }).toEqual({ mutant: m.id, reason: true });
     }
-    expect(MUTANTS).toHaveLength(31);
+    // F7: every N-S12-3 anchor resolves to exactly one SKILL.md line.
+    expect({ misses: MISSES.map((x) => `HARNESS BROKEN: anchor ${x.id} resolves to ${x.n} lines`) }).toEqual({ misses: [] });
+    const count = (p: string) => ALL.filter((m) => new RegExp(`^${p}[0-9]`).test(m.id)).length;
+    expect({ ML: count("ML"), MR: count("MR"), MH: count("MH"), MS: count("MS"), all: ALL.length }).toEqual({ ML: 31, MR: 51, MH: 3, MS: 21, all: 106 });
+    const failed = new Set(ALL.filter((m) => !m.equivalent).flatMap((m) => m.mustFail));
+    expect(EXPECTED_TITLES.filter((t) => !failed.has(t)).sort()).toEqual([...BY_DESIGN].sort());
   });
 
-  for (const m of MUTANTS) {
+  test(`G1: every find of the 106 mutants matches exactly once, in order (mutants 106 patches ${PATCHES} bad 0)`, () => {
+    let patches = 0;
+    let bad = 0;
+    for (const m of ALL) {
+      let src = readFileSync(path.join(REPO, m.file ?? LEDGER), "utf8");
+      for (const [find, replace] of m.patches) {
+        patches++;
+        if (countOccurrences(src, find) !== 1) {
+          bad++;
+          console.log(`G1 bad: ${m.id} ${JSON.stringify(find.slice(0, 80))}`);
+          continue;
+        }
+        src = src.replace(find, () => replace);
+      }
+    }
+    for (const [id, d] of Object.entries(DERIVED)) console.log(`derived ${id}: ${d}`);
+    console.log(`mutants ${ALL.length} patches ${patches} bad ${bad}`);
+    expect({ mutants: ALL.length, patches, bad }).toEqual({ mutants: 106, patches: PATCHES, bad: 0 });
+  });
+
+  for (const m of ALL) {
     test(`mutant caught: ${m.id} ${m.what}`, async () => {
-      await withCopy([{ file: LEDGER, patches: m.patches }], (root, copy) => {
+      if (m.gate === "homebrew" && !existsSync("/opt/homebrew/bin")) {
+        console.log(`${m.id} N/A (no /opt/homebrew/bin)`);
+        return;
+      }
+      const file = m.file ?? LEDGER;
+      await withCopy([{ file, patches: m.patches }], async (root, copy) => {
         const named = [...m.mustFail, ...m.mustPass];
-        const r = runKit(copy, named);
-        const unexpected = [...m.mustFail.filter((t) => !r.failed.includes(t)), ...m.mustPass.filter((t) => !r.passed.includes(t))];
-        if (m.mustFail.length > 0 && m.mustFail.every((t) => r.passed.includes(t))) console.log(`STILL GREEN: ${m.id}`);
+        let r: KitResult;
+        let reaped: { id: string; left: string[] } | null = null;
+        if (file === RERUN) {
+          // F1: the runs are reaped on every exit path, before withCopy removes the root.
+          const runs: RunRecord[] = [];
+          let original: unknown;
+          try {
+            r = await runKitWatched(root, copy, named, runs);
+            if (runs.length === 0) console.log(`C-L4 ${m.id}: no run recorded`);
+          } catch (e) {
+            original = e;
+            throw e;
+          } finally {
+            reaped = await reapGroups(m.id, root, copy, runs, original);
+          }
+        } else r = runKit(copy, named);
+        const stillGreen = m.mustFail.length > 0 && m.mustFail.every((t) => r.passed.includes(t));
+        const unexpected = [...(m.equivalent ? m.mustFail.filter((t) => !r.passed.includes(t)) : m.mustFail.filter((t) => !r.failed.includes(t))), ...m.mustPass.filter((t) => !r.passed.includes(t))];
+        if (stillGreen && m.equivalent) {
+          greenEquivalent++;
+          console.log(`STILL GREEN (equivalent, by ${(m.reason ?? "").split(" ")[0]}): ${m.id}`);
+        } else if (stillGreen) {
+          greenUnexpected++;
+          console.log(`STILL GREEN: ${m.id}`);
+        }
         if (unexpected.length) console.log(`--- ${m.id}: unexpected result for: ${unexpected.join(" | ")}\n${r.output.slice(-6000)}`);
         // Presence: the -t pattern ran exactly the named titles (JUnit lists the filtered-out ones as skipped).
         expect({ mutant: m.id, ran: r.ran, junit: r.passed.length + r.failed.length }).toEqual({ mutant: m.id, ran: named.length, junit: named.length });
-        for (const t of m.mustFail) expect({ mutant: m.id, title: t, failed: r.failed.includes(t) }).toEqual({ mutant: m.id, title: t, failed: true });
+        // An equivalent row's mustFail titles must pass (N-S12-6); every other row's must fail.
+        for (const t of m.mustFail) expect({ mutant: m.id, title: t, failed: r.failed.includes(t) }).toEqual({ mutant: m.id, title: t, failed: !m.equivalent });
         for (const t of m.mustPass) expect({ mutant: m.id, title: t, passed: r.passed.includes(t) }).toEqual({ mutant: m.id, title: t, passed: true });
         for (const [t, re] of Object.entries(m.mustFailWith ?? {})) {
           const shown = re.test(failureText(r.stderr, t) ?? "");
           expect({ mutant: m.id, title: t, text: String(re), shown }).toEqual({ mutant: m.id, title: t, text: String(re), shown: true });
         }
-        if (m.assertion) {
-          const p = ledgerProbe(root, copy, m.assertion.verb);
+        if (m.assertion?.kind === "finish-fails") {
+          // MR27: the same mutant with finish's 3 s sleep, TERMed in the sleep: no rc.txt, no done.
+          const f = await withCopy([{ file: RERUN, patches: [...m.patches, FINISH_SLEEP] }], (r2, c2) => finishTerm(r2, c2));
+          const holds = f.rcTxt === "2\n" && f.done;
+          if (holds) {
+            greenUnexpected++;
+            console.log(`STILL GREEN: ${m.id} (the finish-TERM assertion still holds)`);
+          }
+          console.log(`${m.id} finish-TERM: ${JSON.stringify(f)}`);
+          expect({ mutant: m.id, holds, run: f }).toEqual({ mutant: m.id, holds: false, run: FINISH_MR27 });
+        } else if (m.assertion) {
+          const p = ledgerProbe(root, copy, m.assertion.verb ?? "log");
           const holds = assertionHolds(m.assertion.kind, p);
           const want = m.assertion.kind.endsWith("-holds");
-          if (!want && holds) console.log(`STILL GREEN: ${m.id} (the ${m.assertion.kind.split("-")[0]} assertion still holds)`);
+          if (!want && holds) {
+            greenUnexpected++;
+            console.log(`STILL GREEN: ${m.id} (the ${m.assertion.kind.split("-")[0]} assertion still holds)`);
+          }
           expect({ mutant: m.id, assertion: m.assertion.kind, holds, rc: p.rc, err: p.err }).toEqual({ mutant: m.id, assertion: m.assertion.kind, holds: want, rc: p.rc, err: p.err });
         }
+        // C-L4: every group a run from this copy left is empty after its TERMs.
+        if (reaped) expect(reaped).toEqual({ id: m.id, left: [] });
       });
     });
   }
@@ -627,8 +1063,13 @@ describe("hub-delegate removal control", () => {
     expect(got.ML24).toEqual({ rc: 3, l13: false, kept: false, holds: false });
   });
 
-  test("finish-TERM: a TERM in finish's 3 s sleep after the summary still leaves rc.txt and done", async () => {
+  test("finish-TERM: a TERM in finish's 3 s sleep after the summary still leaves rc.txt and done; under MR27 it leaves neither", async () => {
     const r = await withCopy([{ file: RERUN, patches: [FINISH_SLEEP] }], (root, copy) => finishTerm(root, copy));
-    expect(r).toEqual({ inSleep: true, termSent: true, exited: true, rcTxt: "2\n", done: true, summaryRc: "rerun-rc: 2" });
+    expect(r).toEqual(FINISH_HOLDS);
+    const mr27 = MR_MH.find((m) => m.id === "MR27");
+    if (!mr27) throw new Error("HARNESS BROKEN: no MR27 row");
+    const r27 = await withCopy([{ file: RERUN, patches: [...mr27.patches, FINISH_SLEEP] }], (root, copy) => finishTerm(root, copy));
+    console.log(`MR27 half: ${JSON.stringify(r27)}`);
+    expect(r27).toEqual(FINISH_MR27);
   });
 });
