@@ -223,7 +223,7 @@ function runKit(copy: string, only?: string[]): KitResult {
   if (only) args.push("-t", onlyPattern(only));
   const proc = spawnBounded(args, {
     cwd: copy,
-    env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "/nonexistent", TMPDIR: "/tmp" },
+    env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "/nonexistent", TMPDIR: "/tmp", ...(process.env.BUN_INSTALL_CACHE_DIR ? { BUN_INSTALL_CACHE_DIR: process.env.BUN_INSTALL_CACHE_DIR } : {}) },
   }, KIT_TIMEOUT_MS);
   return parseKit(report, proc.exitCode ?? -1, proc.stdout.toString(), proc.stderr.toString());
 }
@@ -289,7 +289,7 @@ async function runKitWatched(root: string, copy: string, only: string[], runs: R
   const args = [process.execPath, "test", `./${KIT}`, "--reporter=junit", `--reporter-outfile=${report}`, "-t", onlyPattern(only)];
   const proc = Bun.spawn(args, {
     cwd: copy,
-    env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "/nonexistent", TMPDIR: "/tmp" },
+    env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "/nonexistent", TMPDIR: "/tmp", ...(process.env.BUN_INSTALL_CACHE_DIR ? { BUN_INSTALL_CACHE_DIR: process.env.BUN_INSTALL_CACHE_DIR } : {}) },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -792,7 +792,7 @@ const MR_MH: Mutant[] = [
   { id: "MR39", what: "the warm-up in the foreground", patches: [[">\"$D/out/warmup.txt\" 2>&1 </dev/null) & cpid=$!\n        wait \"$cpid\"; wrc=$?", ">\"$D/out/warmup.txt\" 2>&1 </dev/null)\n        wrc=$?"]], mustFail: ["RR-killed"], mustPass: ["RR-ok"], file: RERUN },
   { id: "MR40", what: "the self line back to v4's form", patches: [["self=$(CDPATH='' cd -- \"$(dirname -- \"$0\")\" && pwd -P)/$(basename -- \"$0\")", "self=$(cd \"$(dirname \"$0\")\" && pwd -P)/$(basename \"$0\")"]], mustFail: ["RR-relpath"], mustPass: ["RR-sha"], file: RERUN },
   { id: "MR41", what: "the unhandled= awk -> a plain grep -c of the suite's lines", patches: [["    awk -v h=\"== $line\" '$0 == h {on = 1; n = 0; next} on && p && /^-{31}$/ {n++} {p = ($0 == \"# Unhandled error between tests\")} END {print \"unhandled=\" n+0}' \"$D/out/log.txt\" >> \"$D/out/log.txt\"\n", "    echo \"unhandled=$(awk -v h=\"== $line\" '$0 == h {on = 1; next} on' \"$D/out/log.txt\" | grep -c '^# Unhandled error between tests$')\" >> \"$D/out/log.txt\"\n"]], mustFail: ["RR-unhandled"], mustPass: ["RR-ok"], file: RERUN },
-  { id: "MR42", what: "one /usr/bin/git -C w outside the span -> git -C w (tw)", patches: [["/usr/bin/git -C w \"$@\"", "git -C w \"$@\""]], mustFail: ["RR-git-abs"], mustPass: ["RR-ok"], file: RERUN },
+  { id: "MR42", what: "one /usr/bin/git -C w outside the span -> git -C w (tw; mustPass refuses before the mutated line: under rerun.sh's scrub a bare git is the refusing shim)", patches: [["/usr/bin/git -C w \"$@\"", "git -C w \"$@\""]], mustFail: ["RR-git-abs"], mustPass: ["RR-d"], file: RERUN },
   { id: "MR43", what: "the warm-up's >\"$D/out/warmup.txt\" -> >>\"$D/out/log.txt\"", patches: [["bun test >\"$D/out/warmup.txt\" 2>&1", "bun test >>\"$D/out/log.txt\" 2>&1"]], mustFail: ["RR-ok", "RR-warmup"], mustPass: ["RR-sha"], file: RERUN },
   { id: "MR44", what: "|errors? dropped from blk's pattern", patches: [["todo|errors?|expect", "todo|expect"]], mustFail: ["RR-unhandled"], mustPass: ["RR-ok"], file: RERUN },
   { id: "MR45", what: "the awk's /^-{31}$/ -> /^-+$/", patches: [["/^-{31}$/", "/^-+$/"]], mustFail: ["RR-unhandled"], mustPass: ["RR-ok"], file: RERUN },
