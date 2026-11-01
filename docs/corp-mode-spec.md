@@ -1,4 +1,4 @@
-# Corp mode spec — v2.4-lab.4 (AI.Lab copy)
+# Corp mode spec — v2.4-lab.5 (AI.Lab copy)
 
 AI.Lab copy for #25 (WO-027) of v2.4 (sha1 214952dc). Self-contained: §0a carries the
 flow-spec rules it relies on (flow spec v1.2.2, sha1 1cac472e), so the lab hub needs no
@@ -94,7 +94,7 @@ COMMIT_SIGNOFF → §1.10; operator merge → §1.11; CLOSED → §1.13.
 | §1.5 Plan audit | §1.5, §0, §3.7, §3.9, §4.1, §4.4 |
 | §1.6 Implement | §1.6, §0, §0a, §3.1, §3.6, §3.9 |
 | §1.7 Review gate | §1.7, §0, §1.5, §3.7, §3.8, §3.9 |
-| §1.8 Verification (team runs, hub re-runs) | §1.8, §0, §2.4, §3.8, §3.9, §4.1 |
+| §1.8 Verification (team runs, hub re-runs) | §1.8, §0, §2.4, §3.8, §3.9, §4.1, §4.4 |
 | §1.9 Live check | §1.9, §2.2, §3.5, §3.10, §4.2, §4.4 |
 | §1.10 Signoff and commit | §1.10, §0a, §1.8, §2.2, §2.3, §4.2 |
 | §1.11 PR and merge | §1.11, §2.2, §3.5, §4.2 |
@@ -273,6 +273,8 @@ Written at creation, before any code:
   - `skills/`, `settings.json`: at the next session start (the skill list refreshes on a resume
     too), except that `skills/plan-audit/run.sh` and its `briefs/` take effect at the lab hub's
     next audit launch;
+  - `skills/hub-delegate/` (`rerun.sh`, `ledger.sh`, `briefs/`): at the lab hub's next call of
+    each;
   - `hooks/`, `.claude-plugin/`: at the next lab hub start (the plugin view copies them);
   - `docs/corp-mode-spec.md`: at the hub's next read of that section (order start for the
     glossary, contents, §0a and §5; each step for its mapped sections).
@@ -283,6 +285,32 @@ Written at creation, before any code:
     edited script;
   - a new script on such a path stays non-executable (`chmod -x`, callers guard on `-x`)
     until COMMIT_SIGNOFF, unless an executing reviewer proves it safe first.
+
+**Delegation (hub, #69 item A)**
+
+- The hub may hand three kinds of detail work to a delegate, and no other: the suites on a
+  team's final tree (`skills/hub-delegate/rerun.sh`); a check of one team document against its
+  reference (a restatement against the issue, a DONE report or review verdicts against the plan),
+  and a draft of the hub's plain-words message to the operator (the
+  `oh-my-team:hub-reader` agent); the ledger's Log rows and Now block
+  (`skills/hub-delegate/ledger.sh`).
+- A delegate's result is a reading aid, not evidence. Evidence is the harness's own lines that
+  rerun.sh copies into its summary, and ledger.sh's printed diff; a count a model typed is a
+  claim. Before ruling, the hub re-checks every mismatch and absent row of a document check, and
+  one match row: a quoted line with `grep -nxF -e` (the whole line) at the row's line number, an
+  absent row by its id or key term in the document; it cites its own lines.
+- The hub does these itself, never by a delegate: every message it sends, every ruling and tap;
+  its rulings on the gates (a reviewer's verdict file may be checked by a delegate) and plan v2;
+  `git diff --cached --stat` and `--name-only` of the staged tree; the staged sha1, computed by
+  the hub and compared with the team's; the push set's hashes and the two evidence commands above;
+  `git ls-remote` of the pushed branch; `gh pr view` and the merge with its sha; reading
+  rerun.sh's summary; the grep re-checks; the live check; creating a ledger, and the words of its
+  CLOSED row.
+- A delegate holds no bridge tool, no gh, no git push and no `"${OMT_CLI:-omt}" hub`, and
+  reaches no live hub. hub-reader's tool list is Read, Grep and Glob. rerun.sh runs the suites
+  on a /tmp copy without remotes, under run.sh's scrubbed env and shims; the harness's own
+  sandboxed claude still runs. ledger.sh writes one existing ledger under `<vault>/lab/tasks/`
+  and calls only node, to read the State the hook reads. Neither script is a sandbox.
 
 **Also kept**
 
@@ -525,6 +553,15 @@ fixed (§3). Each node lists **owner**, **needs**, **makes**, and **seen in**.
   compiled code under Node with the vscode API stubbed, not the GUI. Hub put that in the push
   ask as an "honesty note" [ev:351] and the ledger recorded that only Phase 1 ran in real
   VS Code [WO-019 01:11Z]. Triggers for challenging evidence: §3.8.
+- **The hub's re-run by rerun.sh (#69 item A).** The hub launches
+  `skills/hub-delegate/rerun.sh` with the staged sha1 it computed and quotes the lines of its
+  summary. That is the hub's own run: the harness printed those lines. What the summary does not
+  show, the hub greps from the run's log (§4.4). A refusal or a killed run is no run (§4.1).
+  A loading failure (a ` N error` or ` N errors` line in the suite's summary block), a `bun test`
+  suite without exactly one `Ran` line and one ` N fail` line or with an `rc=` other than 0 or 1,
+  or a summary that could not be copied is no verdict for that suite (the hub-delegate skill's
+  re-run steps).
+  A `channel tsc` suite prints no `Ran` or count line and is read by its `rc=` and its `error TS` lines, the only lines of its output the summary copies: `rc=0` with no `error TS` line is green; `rc=2` with one or more `error TS` lines is red, each `error TS` line a red; anything else is no verdict, including `rc=2` with no `error TS` line and `rc=0` with an `error TS` line.
 
 ### 1.9 Live check
 - **Owner:** hub drives it; the operator approves it and sometimes runs it.
@@ -870,6 +907,19 @@ Hub reads the state first so nothing surprises. Case: "~/.omtv/hub-registry.json
   - "No commit until COMMIT_SIGNOFF";
   - "keep .sisyphus/now.md with a state: line" (order, plan sha1, state, current step,
     blocked-on, next step; state: CLOSED on the hub's close message);
+  - "stage exactly the final files by path before DONE, leave no unstaged change and no
+    untracked file outside .sisyphus/, .claude/, CLAUDE.local.md and .mcp.json*, and report
+    staged: `git diff --cached --binary | shasum`; DONE report to <the vault path, written out
+    in full>/lab/artifacts/<lwo-nnn>-done.md; restatement, plans and review verdicts
+    (<lwo-nnn>-review-r<n>.md) in .sisyphus/plans/; each message about them carries path +
+    sha1 + ≤10 lines; from your own root run, run as `env -u CLAUDECODE bun test test/` (bun
+    prints no (pass) line while CLAUDECODE is set), quote whole, each on its own line starting
+    (fail) or (pass), every (fail) line and the (pass) lines of these 4 tests: T4 profile guard > T4 HOME override without the seam gate still
+    guards the passwd home's fleet dir; T14 test seams > T14 seams without the
+    OMT_TEST_SANDBOX gate, or with a gate outside temp, are ignored; profile-mode removal
+    control > baseline: the unmutated copy of test/omt-profile.test.ts passes (else HARNESS
+    BROKEN); profile-mode removal control > every title named by a mutant exists in its suite
+    (else HARNESS BROKEN)";
   - "Ack first".
 
   Case: WO-025 [ev:3681]; S-tier case WO-024 [ev:3660].
@@ -882,6 +932,19 @@ Hub reads the state first so nothing surprises. Case: "~/.omtv/hub-registry.json
 - **Team report (team → hub):** "<team> <LWO> (#N): REPORT. The review gate passed …", then
   "MY RUNS ON THE FINAL TREE" with counts, the controls by name, then deviations and open
   items [ev:4412].
+- **Report files (team → hub, #69 item A):** the team stages exactly the final files by path
+  before DONE, leaves no unstaged change and no untracked file outside `.sisyphus/`, `.claude/`,
+  `CLAUDE.local.md` and `.mcp.json*`, and reports `staged: <git diff --cached --binary | shasum>`;
+  the DONE report is a file at `<vault>/lab/artifacts/<lwo-nnn>-done.md`; a restatement, plan or
+  set of review verdicts (`<lwo-nnn>-review-r<n>.md`) stays in `<repo>/.sisyphus/plans/`. The
+  team_message about it carries path + sha1 + ≤10 lines.
+- **Delegate result (delegate → hub):** rerun.sh: its summary lines, then `log:`, `log-sha1:`,
+  `rerun-rc:` (`killed` or a refusal means no run). ledger.sh: `stamp:`, `sha1-before:`,
+  `sha1-after:` and the diff. hub-reader: one row per side, `id | kind | path:line | quote`; or
+  a draft with the ledger lines it drew on.
+- **Delegated and kept:** the hub always performs four checks itself, never by a delegate: the
+  staged diff stat, the push-set hashes, the ls-remote check and the merge. The full lists of
+  what it may delegate and what it keeps are in §0a Delegation.
 - **Status to the operator (hub → topic):** plain words, what happened and what is next, one
   short paragraph. Case: "WO-025 audit r1 done: correctness PASS (2 medium), verification FAIL
   (1 high, 4 medium). All real test gaps, no design flaw … Team now proposes F/D/R, I rule,
@@ -910,9 +973,9 @@ Order: "<the operator's words>". Tier: <S|M|L>. State: <NAME>.
 Waiting for: <what>, since <hh:mmZ>. Open asks: <token: question>, or "none".
 Pending taps: <what>, or "none". Next: <action>. Evidence: <paths>.
 ## Log
-- hh:mmZ <event, with numbers, sha1s, ask tokens, report paths>. State: <NAME>.
+- yyyy-mm-ddThh:mm:ssZ <event, with numbers, sha1s, ask tokens, report paths>. State: <NAME>.
 …
-- hh:mmZ CLOSED. Commit <sha>, PR <repo>#N → <base>, merged <sha> by operator. Live: <result>. Follow-ups: <issues>.
+- yyyy-mm-ddThh:mm:ssZ CLOSED. Commit <sha>, PR <repo>#N → <base>, merged <sha> by operator. Live: <result>. Follow-ups: <issues>.
 ```
 - **Now block:** at most 15 lines between the header and `## Log`, rewritten (not appended)
   at every state change, so it always says where the order stands: the operator's order in
@@ -942,6 +1005,7 @@ Pending taps: <what>, or "none". Next: <action>. Evidence: <paths>.
 | Plan, working copy | `<repo>/.sisyphus/plans/` |
 | Frozen plans + audit reports | `<vault>/lab/artifacts/<lwo-nnn>-audit/` (`plan-v<N>.md`, `<LWO>-audit-r<N>-<lens>.md`, `prompt-<lens>.txt`). Corp's are in `corp/artifacts/`, where the older folders `wo-019-audit`, `wo021-audit`, `ext11-audit` keep their names |
 | Spike / DONE reports | `<vault>/lab/artifacts/<lwo-nnn>-<kind>.md` |
+| Hub re-run records | `/private/tmp/hub-rerun-<lwo-nnn>-XXXX/`: `staged.patch`, `w/` (the copy), the run's own `home/`, `tmp/`, `tmux/`, `shim-rerun/`, `bun-cache/`, `tcache/`, and `out/` (`launcher.txt`, `pid`, `log.txt`, `warmup.txt`, `summary.txt`, `rc.txt`, `done` last); the hub copies `summary.txt` to `<vault>/lab/artifacts/<lwo-nnn>-rerun.txt` |
 | Live-run records | `~/.omt-scratch/lab-<team>/<run>/` (the `lab-` prefix keeps lab runs apart from Corp's) |
 | Standing rulings | `<vault>/lab/standing.md`: one line per ruling that outlives an order, ending with the order and time that made it, then a `## Open` list of pending proposals and follow-ups; hub appends after the operator's tap; a later line supersedes an earlier one by quoting it; hub reads it at the start of every order; it and the ledger's Now block are notes, never a tap, and relax no rule |
 | Team's current state | `<repo>/.sisyphus/now.md` (the session root): order, plan sha1, state, current step, blocked-on, next step; the team rewrites it at every step and writes `state: CLOSED` on the hub's close message; never staged |
@@ -1303,6 +1367,15 @@ shared data contract, run as one order with two sides. This spec doesn't design 
 waits until the single-item flow has passed §7.
 
 ---
+
+## Changes v2.4-lab.4 → v2.4-lab.5
+- 2026-10-27, #69 item A: §0a which detail work the hub may delegate and what it keeps, and the
+  hub-delegate scripts in the live-tree list; §1.8 the re-run by rerun.sh; §4.1 report files,
+  the delegate result, what is delegated and kept, and the TASK item; §4.3 the Log stamp form;
+  §4.4 the re-run records; the reading map's §1.8 row gains §4.4.
+- Pins moved: the header (lab.4 → lab.5) in DOC_TITLE and rewrite r1; the §0a sha256; the
+  additions for the new lines; ADDITION_COUNT, EXPECTED_TOTAL and the fixtures-pinned title;
+  the reading-map fixture's §1.8 row; g2-edge-changelog re-anchored on this heading.
 
 ## Changes v2.4-lab.3 → v2.4-lab.4
 - 2026-10-26, #69 item B: §4.3 the operator-wait reading of the hub's Now block; §4.6

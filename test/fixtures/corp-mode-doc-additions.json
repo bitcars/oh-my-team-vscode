@@ -528,5 +528,325 @@
     "id": "a-46-wait-6",
     "where": "§4.6",
     "present": "^  At 90% or with the size unknown it is rebuilt \\(a stale newest ledger is reconciled first\\)\\.$"
+  },
+  {
+    "id": "a-0a-tree-1",
+    "where": "0a-tree",
+    "present": "^  \\- `skills/hub\\-delegate/` \\(`rerun\\.sh`, `ledger\\.sh`, `briefs/`\\): at the lab hub's next call of$"
+  },
+  {
+    "id": "a-0a-tree-2",
+    "where": "0a-tree",
+    "present": "^    each;$"
+  },
+  {
+    "id": "a-0a-dlg-1",
+    "where": "0a-dlg",
+    "present": "^\\*\\*Delegation \\(hub, \\#69 item A\\)\\*\\*$"
+  },
+  {
+    "id": "a-0a-dlg-2",
+    "where": "0a-dlg",
+    "present": "^\\- The hub may hand three kinds of detail work to a delegate, and no other: the suites on a$"
+  },
+  {
+    "id": "a-0a-dlg-3",
+    "where": "0a-dlg",
+    "present": "^  team's final tree \\(`skills/hub\\-delegate/rerun\\.sh`\\); a check of one team document against its$"
+  },
+  {
+    "id": "a-0a-dlg-4",
+    "where": "0a-dlg",
+    "present": "^  reference \\(a restatement against the issue, a DONE report or review verdicts against the plan\\),$"
+  },
+  {
+    "id": "a-0a-dlg-5",
+    "where": "0a-dlg",
+    "present": "^  and a draft of the hub's plain\\-words message to the operator \\(the$"
+  },
+  {
+    "id": "a-0a-dlg-6",
+    "where": "0a-dlg",
+    "present": "^  `oh\\-my\\-team:hub\\-reader` agent\\); the ledger's Log rows and Now block$"
+  },
+  {
+    "id": "a-0a-dlg-7",
+    "where": "0a-dlg",
+    "present": "^  \\(`skills/hub\\-delegate/ledger\\.sh`\\)\\.$"
+  },
+  {
+    "id": "a-0a-dlg-8",
+    "where": "0a-dlg",
+    "present": "^\\- A delegate's result is a reading aid, not evidence\\. Evidence is the harness's own lines that$"
+  },
+  {
+    "id": "a-0a-dlg-9",
+    "where": "0a-dlg",
+    "present": "^  rerun\\.sh copies into its summary, and ledger\\.sh's printed diff; a count a model typed is a$"
+  },
+  {
+    "id": "a-0a-dlg-10",
+    "where": "0a-dlg",
+    "present": "^  claim\\. Before ruling, the hub re\\-checks every mismatch and absent row of a document check, and$"
+  },
+  {
+    "id": "a-0a-dlg-11",
+    "where": "0a-dlg",
+    "present": "^  one match row: a quoted line with `grep \\-nxF \\-e` \\(the whole line\\) at the row's line number, an$"
+  },
+  {
+    "id": "a-0a-dlg-12",
+    "where": "0a-dlg",
+    "present": "^  absent row by its id or key term in the document; it cites its own lines\\.$"
+  },
+  {
+    "id": "a-0a-dlg-13",
+    "where": "0a-dlg",
+    "present": "^\\- The hub does these itself, never by a delegate: every message it sends, every ruling and tap;$"
+  },
+  {
+    "id": "a-0a-dlg-14",
+    "where": "0a-dlg",
+    "present": "^  its rulings on the gates \\(a reviewer's verdict file may be checked by a delegate\\) and plan v2;$"
+  },
+  {
+    "id": "a-0a-dlg-15",
+    "where": "0a-dlg",
+    "present": "^  `git diff \\-\\-cached \\-\\-stat` and `\\-\\-name\\-only` of the staged tree; the staged sha1, computed by$"
+  },
+  {
+    "id": "a-0a-dlg-16",
+    "where": "0a-dlg",
+    "present": "^  the hub and compared with the team's; the push set's hashes and the two evidence commands above;$"
+  },
+  {
+    "id": "a-0a-dlg-17",
+    "where": "0a-dlg",
+    "present": "^  `git ls\\-remote` of the pushed branch; `gh pr view` and the merge with its sha; reading$"
+  },
+  {
+    "id": "a-0a-dlg-18",
+    "where": "0a-dlg",
+    "present": "^  rerun\\.sh's summary; the grep re\\-checks; the live check; creating a ledger, and the words of its$"
+  },
+  {
+    "id": "a-0a-dlg-19",
+    "where": "0a-dlg",
+    "present": "^  CLOSED row\\.$"
+  },
+  {
+    "id": "a-0a-dlg-20",
+    "where": "0a-dlg",
+    "present": "^\\- A delegate holds no bridge tool, no gh, no git push and no `\"\\$\\{OMT_CLI:\\-omt\\}\" hub`, and$"
+  },
+  {
+    "id": "a-0a-dlg-21",
+    "where": "0a-dlg",
+    "present": "^  reaches no live hub\\. hub\\-reader's tool list is Read, Grep and Glob\\. rerun\\.sh runs the suites$"
+  },
+  {
+    "id": "a-0a-dlg-22",
+    "where": "0a-dlg",
+    "present": "^  on a /tmp copy without remotes, under run\\.sh's scrubbed env and shims; the harness's own$"
+  },
+  {
+    "id": "a-0a-dlg-23",
+    "where": "0a-dlg",
+    "present": "^  sandboxed claude still runs\\. ledger\\.sh writes one existing ledger under `<vault>/lab/tasks/`$"
+  },
+  {
+    "id": "a-0a-dlg-24",
+    "where": "0a-dlg",
+    "present": "^  and calls only node, to read the State the hook reads\\. Neither script is a sandbox\\.$"
+  },
+  {
+    "id": "a-18-rerun-1",
+    "where": "18-rerun",
+    "present": "^\\- \\*\\*The hub's re\\-run by rerun\\.sh \\(\\#69 item A\\)\\.\\*\\* The hub launches$"
+  },
+  {
+    "id": "a-18-rerun-2",
+    "where": "18-rerun",
+    "present": "^  `skills/hub\\-delegate/rerun\\.sh` with the staged sha1 it computed and quotes the lines of its$"
+  },
+  {
+    "id": "a-18-rerun-3",
+    "where": "18-rerun",
+    "present": "^  summary\\. That is the hub's own run: the harness printed those lines\\. What the summary does not$"
+  },
+  {
+    "id": "a-18-rerun-4",
+    "where": "18-rerun",
+    "present": "^  show, the hub greps from the run's log \\(§4\\.4\\)\\. A refusal or a killed run is no run \\(§4\\.1\\)\\.$"
+  },
+  {
+    "id": "a-18-rerun-5",
+    "where": "18-rerun",
+    "present": "^  A loading failure \\(a ` N error` or ` N errors` line in the suite's summary block\\), a `bun test`$"
+  },
+  {
+    "id": "a-18-rerun-6",
+    "where": "18-rerun",
+    "present": "^  suite without exactly one `Ran` line and one ` N fail` line or with an `rc=` other than 0 or 1,$"
+  },
+  {
+    "id": "a-18-rerun-7",
+    "where": "18-rerun",
+    "present": "^  or a summary that could not be copied is no verdict for that suite \\(the hub\\-delegate skill's$"
+  },
+  {
+    "id": "a-18-rerun-8",
+    "where": "18-rerun",
+    "present": "^  re\\-run steps\\)\\.$"
+  },
+  {
+    "id": "a-18-rerun-9",
+    "where": "18-rerun",
+    "present": "^  A `channel tsc` suite prints no `Ran` or count line and is read by its `rc=` and its `error TS` lines, the only lines of its output the summary copies: `rc=0` with no `error TS` line is green; `rc=2` with one or more `error TS` lines is red, each `error TS` line a red; anything else is no verdict, including `rc=2` with no `error TS` line and `rc=0` with an `error TS` line\\.$"
+  },
+  {
+    "id": "a-41-task-1",
+    "where": "41-task",
+    "present": "^  \\- \"stage exactly the final files by path before DONE, leave no unstaged change and no$"
+  },
+  {
+    "id": "a-41-task-2",
+    "where": "41-task",
+    "present": "^    untracked file outside \\.sisyphus/, \\.claude/, CLAUDE\\.local\\.md and \\.mcp\\.json\\*, and report$"
+  },
+  {
+    "id": "a-41-task-3",
+    "where": "41-task",
+    "present": "^    staged: `git diff \\-\\-cached \\-\\-binary \\| shasum`; DONE report to <the vault path, written out$"
+  },
+  {
+    "id": "a-41-task-4",
+    "where": "41-task",
+    "present": "^    in full>/lab/artifacts/<lwo\\-nnn>\\-done\\.md; restatement, plans and review verdicts$"
+  },
+  {
+    "id": "a-41-task-5",
+    "where": "41-task",
+    "present": "^    \\(<lwo\\-nnn>\\-review\\-r<n>\\.md\\) in \\.sisyphus/plans/; each message about them carries path \\+$"
+  },
+  {
+    "id": "a-41-task-6",
+    "where": "41-task",
+    "present": "^    sha1 \\+ ≤10 lines; from your own root run, run as `env \\-u CLAUDECODE bun test test/` \\(bun$"
+  },
+  {
+    "id": "a-41-task-7",
+    "where": "41-task",
+    "present": "^    prints no \\(pass\\) line while CLAUDECODE is set\\), quote whole, each on its own line starting$"
+  },
+  {
+    "id": "a-41-task-8",
+    "where": "41-task",
+    "present": "^    \\(fail\\) or \\(pass\\), every \\(fail\\) line and the \\(pass\\) lines of these 4 tests: T4 profile guard > T4 HOME override without the seam gate still$"
+  },
+  {
+    "id": "a-41-task-9",
+    "where": "41-task",
+    "present": "^    guards the passwd home's fleet dir; T14 test seams > T14 seams without the$"
+  },
+  {
+    "id": "a-41-task-10",
+    "where": "41-task",
+    "present": "^    OMT_TEST_SANDBOX gate, or with a gate outside temp, are ignored; profile\\-mode removal$"
+  },
+  {
+    "id": "a-41-task-11",
+    "where": "41-task",
+    "present": "^    control > baseline: the unmutated copy of test/omt\\-profile\\.test\\.ts passes \\(else HARNESS$"
+  },
+  {
+    "id": "a-41-task-12",
+    "where": "41-task",
+    "present": "^    BROKEN\\); profile\\-mode removal control > every title named by a mutant exists in its suite$"
+  },
+  {
+    "id": "a-41-task-13",
+    "where": "41-task",
+    "present": "^    \\(else HARNESS BROKEN\\)\";$"
+  },
+  {
+    "id": "a-41-dlg-1",
+    "where": "41-dlg",
+    "present": "^\\- \\*\\*Report files \\(team → hub, \\#69 item A\\):\\*\\* the team stages exactly the final files by path$"
+  },
+  {
+    "id": "a-41-dlg-2",
+    "where": "41-dlg",
+    "present": "^  before DONE, leaves no unstaged change and no untracked file outside `\\.sisyphus/`, `\\.claude/`,$"
+  },
+  {
+    "id": "a-41-dlg-3",
+    "where": "41-dlg",
+    "present": "^  `CLAUDE\\.local\\.md` and `\\.mcp\\.json\\*`, and reports `staged: <git diff \\-\\-cached \\-\\-binary \\| shasum>`;$"
+  },
+  {
+    "id": "a-41-dlg-4",
+    "where": "41-dlg",
+    "present": "^  the DONE report is a file at `<vault>/lab/artifacts/<lwo\\-nnn>\\-done\\.md`; a restatement, plan or$"
+  },
+  {
+    "id": "a-41-dlg-5",
+    "where": "41-dlg",
+    "present": "^  set of review verdicts \\(`<lwo\\-nnn>\\-review\\-r<n>\\.md`\\) stays in `<repo>/\\.sisyphus/plans/`\\. The$"
+  },
+  {
+    "id": "a-41-dlg-6",
+    "where": "41-dlg",
+    "present": "^  team_message about it carries path \\+ sha1 \\+ ≤10 lines\\.$"
+  },
+  {
+    "id": "a-41-dlg-7",
+    "where": "41-dlg",
+    "present": "^\\- \\*\\*Delegate result \\(delegate → hub\\):\\*\\* rerun\\.sh: its summary lines, then `log:`, `log\\-sha1:`,$"
+  },
+  {
+    "id": "a-41-dlg-8",
+    "where": "41-dlg",
+    "present": "^  `rerun\\-rc:` \\(`killed` or a refusal means no run\\)\\. ledger\\.sh: `stamp:`, `sha1\\-before:`,$"
+  },
+  {
+    "id": "a-41-dlg-9",
+    "where": "41-dlg",
+    "present": "^  `sha1\\-after:` and the diff\\. hub\\-reader: one row per side, `id \\| kind \\| path:line \\| quote`; or$"
+  },
+  {
+    "id": "a-41-dlg-10",
+    "where": "41-dlg",
+    "present": "^  a draft with the ledger lines it drew on\\.$"
+  },
+  {
+    "id": "a-41-dlg-11",
+    "where": "41-dlg",
+    "present": "^\\- \\*\\*Delegated and kept:\\*\\* the hub always performs four checks itself, never by a delegate: the$"
+  },
+  {
+    "id": "a-41-dlg-12",
+    "where": "41-dlg",
+    "present": "^  staged diff stat, the push\\-set hashes, the ls\\-remote check and the merge\\. The full lists of$"
+  },
+  {
+    "id": "a-41-dlg-13",
+    "where": "41-dlg",
+    "present": "^  what it may delegate and what it keeps are in §0a Delegation\\.$"
+  },
+  {
+    "id": "a-43-stamp-1",
+    "where": "43-stamp",
+    "present": "^\\- yyyy\\-mm\\-ddThh:mm:ssZ <event, with numbers, sha1s, ask tokens, report paths>\\. State: <NAME>\\.$"
+  },
+  {
+    "id": "a-43-stamp-2",
+    "where": "43-stamp",
+    "present": "^\\- yyyy\\-mm\\-ddThh:mm:ssZ CLOSED\\. Commit <sha>, PR <repo>\\#N → <base>, merged <sha> by operator\\. Live: <result>\\. Follow\\-ups: <issues>\\.$"
+  },
+  {
+    "id": "a-44-rerun-1",
+    "where": "44-rerun",
+    "present": "^\\| Hub re\\-run records \\| `/private/tmp/hub\\-rerun\\-<lwo\\-nnn>\\-XXXX/`: `staged\\.patch`, `w/` \\(the copy\\), the run's own `home/`, `tmp/`, `tmux/`, `shim\\-rerun/`, `bun\\-cache/`, `tcache/`, and `out/` \\(`launcher\\.txt`, `pid`, `log\\.txt`, `warmup\\.txt`, `summary\\.txt`, `rc\\.txt`, `done` last\\); the hub copies `summary\\.txt` to `<vault>/lab/artifacts/<lwo\\-nnn>\\-rerun\\.txt` \\|$"
   }
 ]

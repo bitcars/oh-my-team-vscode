@@ -122,10 +122,55 @@
     {
       "row": "17",
       "rule": "Hub re-runs suites before every push ask",
-      "mustMatch": "before every push ask, re-run the team's suites on its final tree yourself; the ask carries your numbers and what you did not run",
+      "mustMatch": "before every push ask, re-run the team's suites on its final tree yourself, by rerun\\.sh \\(its harness lines are your run\\); the ask carries your numbers and what you did not run",
       "invert": {
         "find": "re-run the team's suites on its final tree yourself",
         "replace": "quote the team's suite numbers"
+      }
+    },
+    {
+      "row": "x-delegate",
+      "rule": "x-delegate",
+      "mustMatch": "delegate detail work by the hub\\-delegate skill \\(\"\\$omt_plugin_dir/skills/hub\\-delegate/skill\\.md\"\\): the suites on a team's final tree to rerun\\.sh, a team document checked against its reference \\(skill §3\\) and your status draft for the operator to the oh\\-my\\-team:hub\\-reader agent, log rows and the now block to ledger\\.sh; nothing else \\(spec §0a\\)\\.",
+      "invert": {
+        "find": "nothing else",
+        "replace": "and anything else"
+      }
+    },
+    {
+      "row": "x-evidence",
+      "rule": "x-evidence",
+      "mustMatch": "a delegate's result is a reading aid: quote the lines rerun\\.sh's summary copied from the harness; re\\-check every mismatch and absent row, and one match row, yourself before you rule: a quoted line with grep \\-nxf \\-e '<line>' \\-\\- \"<path>\" \\(the whole line, at the row's line number\\), an absent row by its id or key term in the document \\(a hit: read that line yourself\\); never cite a count a model typed\\.",
+      "invert": {
+        "find": "re-check every mismatch and absent row",
+        "replace": "trust every row"
+      }
+    },
+    {
+      "row": "x-own",
+      "rule": "x-own",
+      "mustMatch": "never delegate: what you send, rule or tap; your ruling on a gate \\(a reviewer's verdict file may be checked by hub\\-reader\\) and plan v2; git diff \\-\\-cached \\-\\-stat and \\-\\-name\\-only; the staged sha1 \\(compute it yourself and compare it with the team's\\); the push\\-set hashes and the two evidence commands; ls\\-remote; gh pr view and the merge; reading rerun\\.sh's summary; the grep re\\-checks; the live check; creating a ledger; the words of its closed row \\(spec §0a\\)\\.",
+      "invert": {
+        "find": "Never delegate:",
+        "replace": "You may delegate:"
+      }
+    },
+    {
+      "row": "x-wait",
+      "rule": "x-wait",
+      "mustMatch": "launch rerun\\.sh with one ordinary bash call \\(it detaches and prints its pid; log its <d> and pid with ledger\\.sh\\); wait with a monitor until its out/done exists, its pid is dead, or 3 h have passed; past 3 h escalate to the operator with that pid and the options \\(kill by that pid / wait\\); keep one rerun line in the now block, in the forms of skill step 5, and rewrite it on every end; on the operator's pick \"kill\" send one term by skill step 6's kill call, never \\-9, and re\\-arm with no 3 h clause for up to 15 min until end done or end dead \\(rerun\\-rc: killed is no run\\); still alive at 15 min: escalate again with the group's ps lines \\(re\\-arm 15 min / abandon the run\\), each time it happens; after an abandon, no new run until the group is empty, which the operator clears; on \"wait\" re\\-arm at the next mark, 6 h, then in 3 h steps, logging each mark's expiry with ledger\\.sh and not asking again; without that pick never signal a run; never a foreground sleep or the `timeout` command\\.",
+      "invert": {
+        "find": ", its pid is dead,",
+        "replace": ","
+      }
+    },
+    {
+      "row": "x-files",
+      "rule": "x-files",
+      "mustMatch": "in each order also say, with the vault path written out in full \\(run the vault row's v= line, then echo \"\\$v\"; never send \\$v\\): 'stage exactly the final files by path before done, leave no unstaged change and no untracked file outside \\.sisyphus/, \\.claude/, claude\\.local\\.md and \\.mcp\\.json\\*, and report staged: git diff \\-\\-cached \\-\\-binary \\| shasum; done report to <full vault path>/lab/artifacts/<lwo\\-nnn>\\-done\\.md; restatement, plans and review verdicts \\(<lwo\\-nnn>\\-review\\-r<n>\\.md\\) in \\.sisyphus/plans/; each message about them carries path \\+ sha1 \\+ ≤10 lines; from your own root run, run as env \\-u claudecode bun test test/ \\(bun prints no \\(pass\\) line while claudecode is set\\), quote whole, each on its own line starting \\(fail\\) or \\(pass\\), every \\(fail\\) line and the \\(pass\\) lines of these 4 tests: t4 profile guard > t4 home override without the seam gate still guards the passwd home's fleet dir; t14 test seams > t14 seams without the omt_test_sandbox gate, or with a gate outside temp, are ignored; profile\\-mode removal control > baseline: the unmutated copy of test/omt\\-profile\\.test\\.ts passes \\(else harness broken\\); profile\\-mode removal control > every title named by a mutant exists in its suite \\(else harness broken\\)' \\(spec §4\\.1\\)\\.",
+      "invert": {
+        "find": "path + sha1 + ≤10 lines",
+        "replace": "the full report"
       }
     },
     {
@@ -176,7 +221,7 @@
     {
       "row": "x-cli",
       "rule": "The CLI-only rule is about session management",
-      "mustMatch": "the \"use only these\" rule above is about managing sessions; for orders you also run gh, read-only git, test suites and the plan-audit skill's commands",
+      "mustMatch": "the \"use only these\" rule above is about managing sessions; for orders you also run gh, read-only git, test suites and the plan-audit skill's commands, and the hub-delegate skill's scripts",
       "invert": {
         "find": "read-only git",
         "replace": "any git"
@@ -212,7 +257,7 @@
     {
       "row": "x-tree",
       "rule": "This checkout is AI.Lab's live code, the spec included",
-      "mustMatch": "this checkout is ai\\.lab's live code, committed or not: bin/ runs at its next call, channel/ at the next router or bridge start, agents/ in a new conversation \\(a fresh session or /clear; a resumed session, as `hub start` makes, keeps its old prompt\\), skills/ and settings\\.json at the next session start \\(skills/plan-audit/run\\.sh and its briefs/ at your next audit launch\\), hooks/ and \\.claude-plugin/ at your next restart, docs/corp-mode-spec\\.md at your next read of each section",
+      "mustMatch": "this checkout is ai\\.lab's live code, committed or not: bin/ runs at its next call, channel/ at the next router or bridge start, agents/ in a new conversation \\(a fresh session or /clear; a resumed session, as `hub start` makes, keeps its old prompt\\), skills/ and settings\\.json at the next session start \\(skills/plan-audit/run\\.sh and its briefs/ at your next audit launch; skills/hub-delegate/ scripts and briefs/ at your next call of each\\), hooks/ and \\.claude-plugin/ at your next restart, docs/corp-mode-spec\\.md at your next read of each section",
       "invert": {
         "find": "live code, committed or not:",
         "replace": "live code once committed:"

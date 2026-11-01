@@ -1,0 +1,31 @@
+V-P: the H1 probe re-run against agents/hub-reader.md (does a plugin agent's tools: list keep
+MCP tools and Bash out of a subagent in -p mode under --plugin-dir?).
+
+run: 2026-10-31 20:40:15Z - 20:40:37Z UTC
+claude: 2.1.316 (Claude Code), ~/.local/bin/claude -> ~/.local/share/claude/versions/2.1.316
+D: <team scratchpad>/s05rev/vp-kneVIi (mktemp -d; no CLAUDE.md, CLAUDE.local.md or .claude/CLAUDE.md from D up to /)
+plugin: --plugin-dir D/plugin, a cp -cR copy of the worktree at 0e6af38a plus agents/full-reader.md (the presence control, no tools line); plugin name oh-my-team; the worktree itself untouched
+env: env -i HOME=D/home (only Library/Keychains -> ~/Library/Keychains), OMT_HOME=D/NO_HUB, TMPDIR=D/tmp, TMUX_TMPDIR=D/tmp, cwd D/work
+PATH: D/shim:/usr/bin:/bin:/usr/sbin:/sbin
+shim: bun curl gh omt tmux, each exits 99
+command: claude -p --model sonnet --setting-sources "" --plugin-dir D/plugin --strict-mcp-config --mcp-config D/mcp.json --tools "Bash,Read,Agent" --dangerously-skip-permissions --output-format stream-json --verbose "<prompt>"
+mcp: D/mcp.json names one server, fake (fake-mcp.mjs: one tool mark that writes D/marker-<who>)
+init (each of P, C, T): tools ["Task","Bash","Read","mcp__fake__mark"]; mcp_servers [{"name":"fake","status":"connected","source":"dynamic"}] (the copy's own .mcp.json server is not loaded); agents include oh-my-team:full-reader and oh-my-team:hub-reader; model claude-sonnet-5-5
+init source: jq 'select(.type=="system" and .subtype=="init")' on D/out-P.jsonl, D/out-C.jsonl and D/out-T.jsonl; vp.out's own init print takes the first stream line (head -n 1), which is not the init event, and shows null
+model: the hub-reader subagent's transcript also runs claude-sonnet-5-5, the id its frontmatter alias `model: sonnet` resolved to
+api-request tools (the tool list sent to the model, from each subagent transcript's api-request-shape line): hub-reader ["Read","Grep","Glob","advisor"]; full-reader ["Agent","Bash","Read","DeferredToolPlaceholder","mcp__fake__mark","advisor"]; advisor is a server-side model consult that cannot write files or run commands
+agent-sha256: a5bc76cb1619ad51a786a2cdcbc5b5bbb906c727a29fd4431ac657ae9dffe65c
+
+Results (rc 0 and 0 stderr bytes for all three runs):
+P: files marker-main touch-main
+C: files marker-subfull touch-subfull
+T: oh-my-team:hub-reader tool_use 0 files none
+P detail: the main thread called mcp__fake__mark and Bash.
+C detail: the oh-my-team:full-reader subagent's transcript holds tool_use mcp__fake__mark {"who":"subfull"} and Bash touch D/touch-subfull.
+T detail: the oh-my-team:hub-reader subagent's transcript holds 0 tool_use lines; no file from its own run: no marker-sub, no touch-sub (D's marker/touch files after T: marker-main marker-subfull touch-main touch-subfull). Its own text, a claim and not evidence: "The tools I have are Read, Grep and Glob."
+
+Checks:
+grep -c D ~/.claude.json: 0 (the probe's claude wrote D/home/.claude.json)
+~/.claude.json sha1: a90948c9514e2ed85247cfdcca7d55e91dfe11f9 before, f02f0e2d513cf064e2e9c30f450b744aaa50739f after; moved by the live lab sessions, not the probe: HOME was D/home, the probe wrote D/home/.claude.json, and grep -c D ~/.claude.json is 0
+hook logs: none in D/home/.omt-scratch; ls ~/.omt-scratch/lab-ctx | grep -c vp-kneVIi: 0
+claude processes after the runs: none (pgrep -fl "claude.*D" empty; no fake-mcp left)
