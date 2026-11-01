@@ -36,11 +36,11 @@ const FIX = path.join(CHECKOUT, "test", "fixtures");
 const SOURCE = path.join(FIX, "corp-mode-spec-v2.4-214952dc.md");
 const SOURCE_SHA1 = "214952dc19a46b4aa5832318f3e7fa7768744bed";
 const SOURCE_LINES = 975;
-const DOC_TITLE = "# Corp mode spec — v2.4-lab.4 (AI.Lab copy)";
+const DOC_TITLE = "# Corp mode spec — v2.4-lab.5 (AI.Lab copy)";
 
 /** The Dev flow rows (plan v2 §4 plus the review fix round), pinned by id: a dropped row is a dropped rule. */
-const ROW_IDS = ["1", "2", "3", "4", "5", "9", "10", "11", "12", "13", "14", "15", "16", "17", "29", "x-waiver", "x-teams", "x-scoping", "x-vault", "x-cli", "x-settings", "x-corp", "x-live", "x-tree", "x-read", "x-tap", "x-echo", "x-now", "30"];
-const ADDITION_COUNT = 106;
+const ROW_IDS = ["1", "2", "3", "4", "5", "9", "10", "11", "12", "13", "14", "15", "16", "17", "x-delegate", "x-evidence", "x-own", "x-wait", "x-files", "29", "x-waiver", "x-teams", "x-scoping", "x-vault", "x-cli", "x-settings", "x-corp", "x-live", "x-tree", "x-read", "x-tap", "x-echo", "x-now", "30"];
+const ADDITION_COUNT = 170;
 const REWRITE_COUNT = 73;
 /**
  * sha256 pins (WO-027 review round 2, M-A): the keyword checks in CM2 and CM4
@@ -48,7 +48,7 @@ const REWRITE_COUNT = 73;
  * text itself is pinned. A deliberate edit updates the pin in the same change.
  */
 // LWO-007 (#37) moved it on purpose: §0a's live-tree timing for this doc follows the reading map (was e4edd367…).
-const ZERO_A_SHA256 = "4fed1f7999d2b58a02162c8dd6dfd93932e4f009be09996b31184a7d9fef94d3";
+const ZERO_A_SHA256 = "2ce8b5842bc6a9a3e35b79090103690f8dd8d066b799da24976b25a773a5a070";
 const CAUTION_SHA256 = "56830a2161704845ab0f09a83666c2bf12c3233b3f60e55778a89a5879c46203";
 /** #32: the team agents' Attribution block (test/fixtures/attribution.json `block`); CM-attr compares the agents with the fixture, this pins the fixture. */
 const ATTR_BLOCK_SHA256 = "d4f3619d0848acce6a690f5475261881f2a870c605d5b2be172db08e89e20deb";
@@ -241,7 +241,7 @@ describe("CM hub.md Dev flow", () => {
 // ── fixture pins ──────────────────────────────────────────────────────────
 
 describe("CM fixtures", () => {
-  test("CM fixtures pinned: the 29 row ids, 106 additions and 73 rewrites, ids unique, every row with an inversion", () => {
+  test("CM fixtures pinned: the 34 row ids, 170 additions and 73 rewrites, ids unique, every row with an inversion", () => {
     const ids = ROWS_FIX.rows.map((r) => r.row);
     expect(ids).toEqual(ROW_IDS);
     expect(new Set(ids).size).toBe(ids.length);
@@ -962,8 +962,8 @@ const ATTR = JSON.parse(readFileSync(path.join(FIX, "attribution.json"), "utf-8"
   settings: { attribution: { commit: string; pr: string; sessionUrl: boolean } };
   omtvLine: string;
 };
-const AGENT_NAMES = ["atlas", "explorer", "hephaestus", "hub", "librarian", "metis", "momus", "oracle", "prometheus", "reviewer", "security-auditor", "sisyphus"].map((n) => `${n}.md`);
-const TEAM_AGENTS = AGENT_NAMES.filter((f) => f !== "hub.md");
+const AGENT_NAMES = ["atlas", "explorer", "hephaestus", "hub-reader", "hub", "librarian", "metis", "momus", "oracle", "prometheus", "reviewer", "security-auditor", "sisyphus"].map((n) => `${n}.md`);
+const TEAM_AGENTS = AGENT_NAMES.filter((f) => f !== "hub.md" && f !== "hub-reader.md");
 const blockLine = (n: number) => ATTR.block.split("\n")[n];
 /** `file: line` for every line of `files` (name → text) that hits `re`, sorted. */
 function grepLines(files: [string, string][], re: RegExp): string[] {
