@@ -2,8 +2,8 @@ V-P: the H1 probe re-run against agents/hub-reader.md (does a plugin agent's too
 MCP tools and Bash out of a subagent in -p mode under --plugin-dir?).
 
 run: 2026-10-31 20:40:15Z - 20:40:37Z UTC
-claude: 2.1.316 (Claude Code), /Users/yiding/.local/bin/claude -> /Users/yiding/.local/share/claude/versions/2.1.316
-D: /private/tmp/claude-501/-Users-yiding-Sandbox-oh-my-team-vscode/43c930d6-e4cb-4ea1-9bd3-b8851afe9783/scratchpad/s05rev/vp-kneVIi (mktemp -d; no CLAUDE.md, CLAUDE.local.md or .claude/CLAUDE.md from D up to /)
+claude: 2.1.316 (Claude Code), ~/.local/bin/claude -> ~/.local/share/claude/versions/2.1.316
+D: <team scratchpad>/s05rev/vp-kneVIi (mktemp -d; no CLAUDE.md, CLAUDE.local.md or .claude/CLAUDE.md from D up to /)
 plugin: --plugin-dir D/plugin, a cp -cR copy of the worktree at 0e6af38a plus agents/full-reader.md (the presence control, no tools line); plugin name oh-my-team; the worktree itself untouched
 env: env -i HOME=D/home (only Library/Keychains -> ~/Library/Keychains), OMT_HOME=D/NO_HUB, TMPDIR=D/tmp, TMUX_TMPDIR=D/tmp, cwd D/work
 PATH: D/shim:/usr/bin:/bin:/usr/sbin:/sbin
